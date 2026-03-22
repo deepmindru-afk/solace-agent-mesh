@@ -120,6 +120,7 @@ function AppLayoutContent() {
         projectsEnabled,
         promptLibraryEnabled: configFeatureEnablement?.promptLibrary ?? false,
         artifactsPageEnabled: configFeatureEnablement?.artifactsPage ?? false,
+        schedulerEnabled: configFeatureEnablement?.scheduler ?? false,
         logoutEnabled,
         isAuthenticated,
         onUserAccountClick: handleUserAccountClick,
