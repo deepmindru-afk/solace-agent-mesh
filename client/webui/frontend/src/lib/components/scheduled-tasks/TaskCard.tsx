@@ -95,9 +95,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isSelected = false, on
     };
 
     const statusConfig: Record<TaskStatus, { label: string; className: string }> = {
-        active: { label: "Active", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-        paused: { label: "Paused", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-        error: { label: "Error", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+        active: { label: "Active", className: "bg-(--success-w10) text-(--success-w100)" },
+        paused: { label: "Paused", className: "bg-(--warning-w10) text-(--warning-w100)" },
+        error: { label: "Error", className: "bg-(--error-w10) text-(--error-w100)" },
     };
 
     const formatNextRun = (timestamp?: number): string => {
@@ -176,7 +176,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isSelected = false, on
                         <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${statusConfig[task.status]?.className ?? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"}`}>
                             {statusConfig[task.status]?.label ?? task.status}
                         </span>
-                        {task.source === "config" && <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">Config</span>}
+                        {task.source === "config" && <span className="inline-block rounded-full bg-(--info-w10) px-2 py-0.5 text-xs text-(--info-w100)">Config</span>}
                     </div>
                     {task.description && <div className="mb-3 line-clamp-2 text-sm leading-5">{task.description}</div>}
                     <div className="mt-auto space-y-1">

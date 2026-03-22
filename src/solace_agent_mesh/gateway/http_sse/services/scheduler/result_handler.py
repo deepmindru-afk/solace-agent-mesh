@@ -17,6 +17,18 @@ from ...shared import now_epoch_ms
 
 log = logging.getLogger(__name__)
 
+_MAX_USER_ERROR_LENGTH = 256
+
+
+def _sanitize_error_message(message: str) -> str:
+    """Strip internal details from error messages before persisting for the frontend."""
+    if not message:
+        return "Task execution failed"
+    sanitized = message.split("\n")[0].strip()
+    if len(sanitized) > _MAX_USER_ERROR_LENGTH:
+        sanitized = sanitized[:_MAX_USER_ERROR_LENGTH] + "..."
+    return sanitized or "Task execution failed"
+
 
 class ResultHandler:
     """
@@ -132,10 +144,6 @@ class ResultHandler:
                 if messages:
                     result_summary["messages"] = messages
 
-                metadata = a2a.get_task_metadata(result)
-                if metadata:
-                    result_summary["metadata"] = metadata
-
                 task_state = a2a.get_task_status(result)
                 if task_state:
                     result_summary["task_status"] = str(task_state)
@@ -202,8 +210,8 @@ class ResultHandler:
                 update_data = {
                     "status": ExecutionStatus.FAILED,
                     "completed_at": now_epoch_ms(),
-                    "error_message": f"{error.message} (Code: {error.code})",
-                    "result_summary": {"error_code": error.code, "error_data": error.data},
+                    "error_message": _sanitize_error_message(error.message),
+                    "result_summary": {"error_code": error.code},
                 }
                 repo.update_execution(session, execution_id, update_data)
                 session.commit()
@@ -254,7 +262,7 @@ class ResultHandler:
                     update_data = {
                         "status": ExecutionStatus.TIMEOUT,
                         "completed_at": now_epoch_ms(),
-                        "error_message": f"Execution exceeded timeout of {timeout_seconds} seconds",
+                        "error_message": "Execution exceeded the configured timeout",
                     }
                     repo.update_execution(session, execution.id, update_data)
 

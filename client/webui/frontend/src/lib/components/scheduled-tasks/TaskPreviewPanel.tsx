@@ -192,7 +192,7 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
                     </div>
                     <div className="bg-card rounded-lg border p-3">
                         <div className="flex items-center gap-2">
-                            <div className={`h-2 w-2 rounded-full ${config.enabled ? "bg-green-500" : "bg-gray-400"}`} />
+                            <div className={`h-2 w-2 rounded-full ${config.enabled ? "bg-(--success-wMain)" : "bg-muted-foreground"}`} />
                             <span className="text-sm">{config.enabled ? "Enabled" : "Disabled"}</span>
                         </div>
                     </div>

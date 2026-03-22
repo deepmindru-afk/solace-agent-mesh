@@ -56,7 +56,7 @@ try:
     from .routers import scheduled_tasks
     _scheduled_tasks_available = True
 except Exception as e:
-    log.warning(f"Scheduled tasks router not available: {e}")
+    log.warning("Scheduled tasks router not available: %s", e)
     scheduled_tasks = None
     _scheduled_tasks_available = False
 
@@ -349,7 +349,7 @@ def _setup_routers() -> None:
             app.include_router(scheduled_tasks.router, prefix=api_prefix, tags=["Scheduled Tasks"])
             log.info("Scheduled tasks router mounted successfully")
         except Exception as e:
-            log.error(f"Failed to mount scheduled tasks router: {e}", exc_info=True)
+            log.error("Failed to mount scheduled tasks router: %s", e, exc_info=True)
 
     log.info("Legacy routers mounted for endpoints not yet migrated")
 

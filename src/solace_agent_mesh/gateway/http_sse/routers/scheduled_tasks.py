@@ -53,6 +53,21 @@ def get_scheduler_service():
     return scheduler_service
 
 
+def _validate_scheduling_permission(user_config: dict, config_resolver) -> None:
+    """Check that the user has scheduling permission. Raises 403 if not."""
+    operation_spec = {
+        "operation_type": "scheduling",
+    }
+    validation_result = config_resolver.validate_operation_config(
+        user_config, operation_spec, {"source": "scheduled_tasks_endpoint"}
+    )
+    if not validation_result.get("valid", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to use the task scheduler",
+        )
+
+
 # --- Task Builder Chat ---
 
 class TaskBuilderChatRequest(BaseModel):
@@ -91,8 +106,11 @@ def get_task_builder_assistant(
 async def task_builder_chat(
     request: TaskBuilderChatRequest,
     user: dict = Depends(get_current_user),
+    user_config: dict = Depends(get_user_config),
+    config_resolver=Depends(get_config_resolver),
     assistant: TaskBuilderAssistant = Depends(get_task_builder_assistant),
 ):
+    _validate_scheduling_permission(user_config, config_resolver)
     """AI-assisted task builder chat endpoint."""
     user_id = user.get("id")
     try:
@@ -119,8 +137,12 @@ async def task_builder_chat(
 
 @router.get("/builder/greeting", response_model=TaskBuilderChatResponse)
 async def get_task_builder_greeting(
+    user: dict = Depends(get_current_user),
+    user_config: dict = Depends(get_user_config),
+    config_resolver=Depends(get_config_resolver),
     assistant: TaskBuilderAssistant = Depends(get_task_builder_assistant),
 ):
+    _validate_scheduling_permission(user_config, config_resolver)
     """Get initial greeting message for task builder."""
     try:
         response = assistant.get_initial_greeting()

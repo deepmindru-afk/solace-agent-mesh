@@ -34,6 +34,17 @@ _BLOCKED_IP_NETWORKS = [
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
+def _check_ip_blocked(ip_str: str) -> None:
+    """Raise ValueError if the IP falls within a blocked network range."""
+    ip = ipaddress.ip_address(ip_str)
+    for network in _BLOCKED_IP_NETWORKS:
+        if ip in network:
+            raise ValueError(
+                f"Webhook URL resolves to blocked IP range ({ip}). "
+                "Private, loopback, and link-local addresses are not allowed."
+            )
+
+
 def _validate_webhook_url(url: str) -> None:
     """
     Validate a webhook URL to prevent SSRF attacks.
@@ -60,15 +71,27 @@ def _validate_webhook_url(url: str) -> None:
         import socket
         resolved_ips = socket.getaddrinfo(hostname, None)
         for family, _type, _proto, _canonname, sockaddr in resolved_ips:
-            ip = ipaddress.ip_address(sockaddr[0])
-            for network in _BLOCKED_IP_NETWORKS:
-                if ip in network:
-                    raise ValueError(
-                        f"Webhook URL resolves to blocked IP range ({ip}). "
-                        "Private, loopback, and link-local addresses are not allowed."
-                    )
+            _check_ip_blocked(sockaddr[0])
     except socket.gaierror:
         raise ValueError(f"Could not resolve hostname: {hostname}")
+
+
+class _SSRFSafeTransport(httpx.AsyncHTTPTransport):
+    """Transport that enforces IP restrictions at connection time to prevent DNS rebinding."""
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        import socket
+
+        url = request.url
+        hostname = url.host
+        port = url.port or (443 if url.scheme == b"https" else 80)
+
+        # Resolve and validate at connection time
+        resolved_ips = socket.getaddrinfo(hostname, port)
+        for family, _type, _proto, _canonname, sockaddr in resolved_ips:
+            _check_ip_blocked(sockaddr[0])
+
+        return await super().handle_async_request(request)
 
 
 class NotificationService:
@@ -90,8 +113,11 @@ class NotificationService:
         self.namespace = namespace
         self.instance_id = instance_id
         self.log_prefix = f"[NotificationService:{instance_id}]"
-        self.http_client = httpx.AsyncClient(timeout=30.0)
-        log.info(f"{self.log_prefix} Initialized")
+        self.http_client = httpx.AsyncClient(
+            timeout=30.0,
+            transport=_SSRFSafeTransport(),
+        )
+        log.info("%s Initialized", self.log_prefix)
 
     async def notify_execution_complete(
         self,

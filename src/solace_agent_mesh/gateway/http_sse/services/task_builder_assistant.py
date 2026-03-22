@@ -22,6 +22,51 @@ class TaskBuilderResponse(BaseModel):
     ready_to_save: bool = False
 
 
+_VALID_SCHEDULE_TYPES = {"cron", "interval", "one_time"}
+_VALID_TARGET_TYPES = {"agent", "workflow"}
+
+_ALLOWED_UPDATE_FIELDS = {
+    "name", "description", "schedule_type", "schedule_expression",
+    "target_agent_name", "target_type", "task_message", "timezone",
+    "enabled", "max_retries", "timeout_seconds",
+}
+
+
+def _validate_task_updates(raw: Any) -> Dict[str, Any]:
+    """Validate and sanitize LLM-generated task_updates before surfacing to the frontend."""
+    if not isinstance(raw, dict):
+        return {}
+
+    validated: Dict[str, Any] = {}
+    for key, value in raw.items():
+        if key not in _ALLOWED_UPDATE_FIELDS:
+            continue
+
+        if key == "schedule_type":
+            if isinstance(value, str) and value in _VALID_SCHEDULE_TYPES:
+                validated[key] = value
+            else:
+                logger.warning("LLM returned invalid schedule_type: %s", value)
+        elif key == "target_type":
+            if isinstance(value, str) and value in _VALID_TARGET_TYPES:
+                validated[key] = value
+            else:
+                logger.warning("LLM returned invalid target_type: %s", value)
+        elif key == "enabled":
+            validated[key] = bool(value)
+        elif key in ("max_retries", "timeout_seconds"):
+            try:
+                validated[key] = int(value)
+            except (TypeError, ValueError):
+                logger.warning("LLM returned non-integer for %s: %s", key, value)
+        elif isinstance(value, str):
+            validated[key] = value[:500]
+        else:
+            validated[key] = value
+
+    return validated
+
+
 class TaskBuilderAssistant:
     """
     AI assistant for scheduled task creation.
@@ -250,15 +295,20 @@ REMEMBER:
             else:
                 sanitized_task[key] = value
 
-        task_context = f"\n\nCurrent Task Configuration:\n{json.dumps(sanitized_task, indent=2)}"
+        task_context = f"Current Task Configuration:\n{json.dumps(sanitized_task, indent=2)}"
 
         if available_agents:
-            agents_context = f"\n\nAvailable Agents (ONLY use these):\n{json.dumps(available_agents, indent=2)}"
-            task_context += agents_context
+            task_context += f"\n\nAvailable Agents (ONLY use these):\n{json.dumps(available_agents, indent=2)}"
 
+        # Add context as a separate system message so user input cannot
+        # override or escape the context framing.
+        messages.append({
+            "role": "system",
+            "content": task_context,
+        })
         messages.append({
             "role": "user",
-            "content": user_message + task_context
+            "content": user_message,
         })
         
         # Call LLM with JSON mode
@@ -313,11 +363,19 @@ REMEMBER:
                 logger.warning("LLM returned generic/empty message: '%s'", message)
                 message = "I'll help you create that scheduled task. Could you provide more details about when it should run and what it should do?"
             
+            task_updates = _validate_task_updates(parsed.get("task_updates", {}))
+
+            raw_confidence = parsed.get("confidence", 0.5)
+            try:
+                confidence = max(0.0, min(1.0, float(raw_confidence)))
+            except (TypeError, ValueError):
+                confidence = 0.5
+
             return TaskBuilderResponse(
                 message=message,
-                task_updates=parsed.get("task_updates", {}),
-                confidence=parsed.get("confidence", 0.5),
-                ready_to_save=parsed.get("ready_to_save", False)
+                task_updates=task_updates,
+                confidence=confidence,
+                ready_to_save=bool(parsed.get("ready_to_save", False)),
             )
             
         except Exception as e:

@@ -293,18 +293,19 @@ class K8SCronJobManager:
         Returns:
             True if successful, False otherwise
         """
-        # If it's a ONE_TIME task, delete the Job instead
         if schedule_type == ScheduleType.ONE_TIME:
             return await self.delete_one_time_job(task_id)
-        """
-        Delete a K8S CronJob.
 
-        Args:
-            task_id: Scheduled task ID
+        if schedule_type is None:
+            # Unknown type — try deleting both Job and CronJob
+            job_result = await self.delete_one_time_job(task_id)
+            cronjob_result = await self._delete_cronjob_resource(task_id)
+            return job_result or cronjob_result
 
-        Returns:
-            True if successful, False otherwise
-        """
+        return await self._delete_cronjob_resource(task_id)
+
+    async def _delete_cronjob_resource(self, task_id: str) -> bool:
+        """Delete the K8S CronJob resource for a task."""
         cronjob_name = self._get_cronjob_name(task_id)
         log.info(f"Deleting K8S CronJob '{cronjob_name}' for task {task_id}")
         
@@ -414,30 +415,15 @@ class K8SCronJobManager:
         safe_id = re.sub(r'[^a-z0-9-]', '-', task_id.lower())
         return f"scheduled-job-{safe_id}"
 
-    def _build_cronjob_spec(self, task: ScheduledTaskModel) -> client.V1CronJob:
-        """
-        Build K8S CronJob specification from task model.
-
-        Args:
-            task: Scheduled task model
-
-        Returns:
-            V1CronJob specification
-        """
-        cronjob_name = self._get_cronjob_name(task.id)
-        
-        # Convert schedule to cron format
-        schedule = self._convert_schedule(task)
-        
-        # Build container spec
-        container = client.V1Container(
+    def _build_container_spec(self, task_id: str) -> client.V1Container:
+        """Build the shared container spec used by both CronJobs and Jobs."""
+        return client.V1Container(
             name="task-executor",
             image=self.executor_image,
             image_pull_policy="IfNotPresent",
             env=[
-                client.V1EnvVar(name="TASK_ID", value=task.id),
+                client.V1EnvVar(name="TASK_ID", value=task_id),
                 client.V1EnvVar(name="NAMESPACE", value=self.a2a_namespace),
-                # Database URL from secret
                 client.V1EnvVar(
                     name="DATABASE_URL",
                     value_from=client.V1EnvVarSource(
@@ -447,7 +433,6 @@ class K8SCronJobManager:
                         )
                     )
                 ),
-                # Broker config from secret
                 client.V1EnvVar(
                     name="BROKER_URL",
                     value_from=client.V1EnvVarSource(
@@ -492,7 +477,24 @@ class K8SCronJobManager:
                 limits={"memory": "512Mi", "cpu": "500m"}
             )
         )
-        
+
+    def _build_cronjob_spec(self, task: ScheduledTaskModel) -> client.V1CronJob:
+        """
+        Build K8S CronJob specification from task model.
+
+        Args:
+            task: Scheduled task model
+
+        Returns:
+            V1CronJob specification
+        """
+        cronjob_name = self._get_cronjob_name(task.id)
+
+        # Convert schedule to cron format
+        schedule = self._convert_schedule(task)
+
+        container = self._build_container_spec(task.id)
+
         # Build pod template
         pod_template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(
@@ -570,70 +572,8 @@ class K8SCronJobManager:
             V1Job specification
         """
         job_name = self._get_job_name(task.id)
-        
-        # Build container spec (same as CronJob)
-        container = client.V1Container(
-            name="task-executor",
-            image=self.executor_image,
-            image_pull_policy="IfNotPresent",
-            env=[
-                client.V1EnvVar(name="TASK_ID", value=task.id),
-                client.V1EnvVar(name="NAMESPACE", value=self.a2a_namespace),
-                # Database URL from secret
-                client.V1EnvVar(
-                    name="DATABASE_URL",
-                    value_from=client.V1EnvVarSource(
-                        secret_key_ref=client.V1SecretKeySelector(
-                            name=self.database_url_secret,
-                            key="url"
-                        )
-                    )
-                ),
-                # Broker config from secret
-                client.V1EnvVar(
-                    name="BROKER_URL",
-                    value_from=client.V1EnvVarSource(
-                        secret_key_ref=client.V1SecretKeySelector(
-                            name=self.broker_config_secret,
-                            key="url"
-                        )
-                    )
-                ),
-                client.V1EnvVar(
-                    name="BROKER_USERNAME",
-                    value_from=client.V1EnvVarSource(
-                        secret_key_ref=client.V1SecretKeySelector(
-                            name=self.broker_config_secret,
-                            key="username",
-                            optional=True
-                        )
-                    )
-                ),
-                client.V1EnvVar(
-                    name="BROKER_PASSWORD",
-                    value_from=client.V1EnvVarSource(
-                        secret_key_ref=client.V1SecretKeySelector(
-                            name=self.broker_config_secret,
-                            key="password",
-                            optional=True
-                        )
-                    )
-                ),
-                client.V1EnvVar(
-                    name="BROKER_VPN",
-                    value_from=client.V1EnvVarSource(
-                        secret_key_ref=client.V1SecretKeySelector(
-                            name=self.broker_config_secret,
-                            key="vpn"
-                        )
-                    )
-                ),
-            ],
-            resources=client.V1ResourceRequirements(
-                requests={"memory": "128Mi", "cpu": "100m"},
-                limits={"memory": "512Mi", "cpu": "500m"}
-            )
-        )
+
+        container = self._build_container_spec(task.id)
         
         # Build pod template
         pod_template = client.V1PodTemplateSpec(

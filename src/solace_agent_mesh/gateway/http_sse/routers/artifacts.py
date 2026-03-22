@@ -55,6 +55,7 @@ from ..dependencies import (
     get_user_id,
     get_session_manager,
     get_session_business_service_optional,
+    get_db,
     get_db_optional,
 )
 from ..services.project_service import ProjectService
@@ -1321,7 +1322,7 @@ async def get_scheduled_task_artifact(
     user_id: str = Depends(get_user_id),
     component: "WebUIBackendComponent" = Depends(get_sac_component),
     user_config: dict = Depends(ValidatedUserConfig(["tool:artifact:load"])),
-    db: Session | None = Depends(get_db_optional),
+    db: Session = Depends(get_db),
 ):
     """
     Retrieves artifact content from a scheduled task execution.
@@ -1344,21 +1345,20 @@ async def get_scheduled_task_artifact(
 
     # Verify the requesting user owns the task that produced this artifact.
     # Return 404 (not 403) to avoid confirming existence to unauthorized users.
-    if db is not None:
-        from ..repository.scheduled_task_repository import ScheduledTaskRepository
-        repo = ScheduledTaskRepository()
-        execution = repo.find_execution_by_session_id(db, session_id)
-        if not execution:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Artifact not found.",
-            )
-        task = repo.find_by_id(db, execution.scheduled_task_id)
-        if not task or task.created_by != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Artifact not found.",
-            )
+    from ..repository.scheduled_task_repository import ScheduledTaskRepository
+    repo = ScheduledTaskRepository()
+    execution = repo.find_execution_by_session_id(db, session_id)
+    if not execution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artifact not found.",
+        )
+    task = repo.find_by_id(db, execution.scheduled_task_id)
+    if not task or task.created_by != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artifact not found.",
+        )
 
     try:
         app_name = component.get_config("name", "A2A_WebUI_App")

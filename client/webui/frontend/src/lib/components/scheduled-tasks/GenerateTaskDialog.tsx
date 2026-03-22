@@ -47,7 +47,12 @@ export const GenerateTaskDialog: React.FC<GenerateTaskDialogProps> = ({ isOpen, 
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={() => {}}>
+        <Dialog
+            open={isOpen}
+            onOpenChange={open => {
+                if (!open) handleClose();
+            }}
+        >
             <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
                     <DialogTitle className="text-xl">Create Scheduled Task</DialogTitle>
