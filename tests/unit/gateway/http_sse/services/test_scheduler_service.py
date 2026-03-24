@@ -167,7 +167,7 @@ class TestRetryLoop:
         # Track how many times _submit_task_to_agent_mesh is called
         submit_call_count = 0
 
-        async def mock_submit(task_id, execution_id):
+        async def mock_submit(task_id, execution_id, task_snapshot):
             nonlocal submit_call_count
             submit_call_count += 1
             raise Exception("Simulated failure")
@@ -218,7 +218,7 @@ class TestRetryLoop:
 
         submit_call_count = 0
 
-        async def mock_submit(task_id, execution_id):
+        async def mock_submit(task_id, execution_id, task_snapshot):
             nonlocal submit_call_count
             submit_call_count += 1
             raise Exception("Simulated failure")
@@ -413,6 +413,78 @@ class TestMetadataFiltering:
         req_meta = captured_request_metadata[0]
         assert "dangerous_key" not in req_meta
         assert "sessionBehavior" not in req_meta  # not a safe key for request metadata
+
+    @pytest.mark.asyncio
+    async def test_metadata_filtering_with_task_snapshot(self):
+        """Non-safe keys are stripped when using the task_snapshot path (production path)."""
+        service, mocks = _build_scheduler_service()
+
+        task_metadata = {
+            "priority": "high",
+            "tags": ["daily"],
+            "dangerous_key": "should-be-stripped",
+            "sessionBehavior": "OVERRIDE_ATTEMPT",
+        }
+
+        task_snapshot = {
+            "task_message": [{"type": "text", "text": "test"}],
+            "name": "test-task",
+            "run_count": 0,
+            "task_metadata": task_metadata,
+            "target_agent_name": "agent-a",
+            "user_id": "user-1",
+            "created_by": "user-1",
+            "timezone": "UTC",
+        }
+
+        captured_metadata = []
+        captured_request_metadata = []
+
+        def capture_publish(topic, payload, user_props):
+            pass
+
+        service.publish_func = capture_publish
+
+        # session.get is still needed for execution status update and session creation
+        mocks["session"].get.return_value = _make_mock_execution()
+
+        with patch(
+            "solace_agent_mesh.gateway.http_sse.services.scheduler.scheduler_service.a2a"
+        ) as mock_a2a:
+            mock_a2a.create_text_part.return_value = {"type": "text", "text": "test"}
+
+            mock_request = MagicMock()
+            mock_request.model_dump.return_value = {"test": "payload"}
+            mock_a2a.get_agent_request_topic.return_value = "ns1/agent-a"
+
+            def capture_create_user_message(**kwargs):
+                captured_metadata.append(kwargs.get("metadata", {}))
+                return MagicMock()
+
+            mock_a2a.create_user_message.side_effect = capture_create_user_message
+
+            def capture_create_request(**kwargs):
+                captured_request_metadata.append(kwargs.get("metadata", {}))
+                return mock_request
+
+            mock_a2a.create_send_streaming_message_request.side_effect = capture_create_request
+
+            await service._submit_task_to_agent_mesh("task-1", "exec-1", task_snapshot)
+
+        # Verify the message metadata has safe keys + protocol keys, but not dangerous ones
+        assert len(captured_metadata) == 1
+        msg_meta = captured_metadata[0]
+        assert msg_meta.get("priority") == "high"
+        assert msg_meta.get("tags") == ["daily"]
+        assert "dangerous_key" not in msg_meta
+        assert msg_meta.get("sessionBehavior") == "RUN_BASED"
+        assert msg_meta.get("returnArtifacts") is True
+
+        # Verify the request-level metadata also filters
+        assert len(captured_request_metadata) == 1
+        req_meta = captured_request_metadata[0]
+        assert "dangerous_key" not in req_meta
+        assert "sessionBehavior" not in req_meta
 
 
 # ===========================================================================

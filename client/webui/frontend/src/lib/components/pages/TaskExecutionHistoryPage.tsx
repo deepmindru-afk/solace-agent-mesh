@@ -208,7 +208,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
         return (
             <div className="space-y-2">
                 {allArtifacts.map((artifact, idx: number) => {
-                    const isViewable = artifact.uri?.startsWith("http") || artifact.uri?.startsWith("/");
+                    const isViewable = artifact.uri?.startsWith("http") || artifact.uri?.startsWith("/") || artifact.uri?.startsWith("artifact://");
                     const filename = artifact.name || artifact.uri?.split("/").pop() || `artifact-${idx + 1}`;
 
                     const artifactInfo: ArtifactInfo = {

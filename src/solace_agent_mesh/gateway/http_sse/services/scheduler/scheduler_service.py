@@ -354,7 +354,8 @@ class SchedulerService:
             self.instance_id, task_id,
         )
 
-        # Read task config once before the retry loop
+        # Read task config once before the retry loop so retry behavior
+        # is consistent even if the task is updated mid-execution.
         timeout_seconds = self.default_timeout_seconds
         max_retries = 0
         retry_delay_seconds = 60
@@ -367,6 +368,17 @@ class SchedulerService:
             timeout_seconds = task.timeout_seconds or self.default_timeout_seconds
             max_retries = task.max_retries or 0
             retry_delay_seconds = task.retry_delay_seconds or 60
+            # Snapshot task fields for the retry loop so we don't re-read
+            task_snapshot = {
+                "task_message": task.task_message,
+                "name": task.name,
+                "run_count": task.run_count,
+                "task_metadata": task.task_metadata,
+                "target_agent_name": task.target_agent_name,
+                "user_id": task.user_id,
+                "created_by": task.created_by,
+                "timezone": task.timezone,
+            }
 
         for attempt in range(max_retries + 1):
             execution_id = None
@@ -415,7 +427,7 @@ class SchedulerService:
                     session.commit()
 
                 execution_task = asyncio.create_task(
-                    self._submit_task_to_agent_mesh(task_id, execution_id)
+                    self._submit_task_to_agent_mesh(task_id, execution_id, task_snapshot)
                 )
 
                 async with self._execution_lock:
@@ -559,12 +571,11 @@ class SchedulerService:
         text = text.replace("{{execution.id}}", execution_id)
         return text
 
-    async def _submit_task_to_agent_mesh(self, task_id: str, execution_id: str):
+    async def _submit_task_to_agent_mesh(self, task_id: str, execution_id: str, task_snapshot: Dict[str, Any] = None):
         """Submit the scheduled task to the agent mesh via A2A protocol.
 
-        Reads task data and closes the DB session before performing any async
-        I/O (publish, register, wait) so that a connection is not held open
-        during network operations.
+        Uses a pre-read task_snapshot when available so that retry behaviour
+        stays consistent even if the task definition is updated concurrently.
         """
         log.info(
             "[SchedulerService:%s] Submitting execution %s to agent mesh",
@@ -572,21 +583,30 @@ class SchedulerService:
         )
 
         try:
-            # --- Step 1: Read task data and build message (DB session scoped) ---
-            with self.session_factory() as session:
-                task = session.get(ScheduledTaskModel, task_id)
-                if not task:
-                    raise ValueError("Task %s not found" % task_id)
+            # --- Step 1: Use snapshot or read task data (DB session scoped) ---
+            if task_snapshot:
+                task_message_raw = task_snapshot["task_message"]
+                task_name = task_snapshot["name"]
+                task_run_count = task_snapshot["run_count"]
+                task_metadata_raw = task_snapshot["task_metadata"]
+                target_agent_name = task_snapshot["target_agent_name"]
+                task_user_id = task_snapshot["user_id"]
+                task_created_by = task_snapshot["created_by"]
+                task_timezone = task_snapshot["timezone"]
+            else:
+                with self.session_factory() as session:
+                    task = session.get(ScheduledTaskModel, task_id)
+                    if not task:
+                        raise ValueError("Task %s not found" % task_id)
 
-                # Extract all fields needed after session closes
-                task_message_raw = task.task_message
-                task_name = task.name
-                task_run_count = task.run_count
-                task_metadata_raw = task.task_metadata
-                target_agent_name = task.target_agent_name
-                task_user_id = task.user_id
-                task_created_by = task.created_by
-                task_timezone = task.timezone
+                    task_message_raw = task.task_message
+                    task_name = task.name
+                    task_run_count = task.run_count
+                    task_metadata_raw = task.task_metadata
+                    target_agent_name = task.target_agent_name
+                    task_user_id = task.user_id
+                    task_created_by = task.created_by
+                    task_timezone = task.timezone
 
             # --- Step 1b: Create a real session for this execution ---
             # This makes scheduled task outputs visible in the chat session list

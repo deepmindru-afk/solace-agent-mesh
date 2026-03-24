@@ -4,7 +4,7 @@ REST API router for scheduled tasks management.
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 from croniter import croniter
@@ -37,6 +37,17 @@ router = APIRouter(prefix="/scheduled-tasks", tags=["scheduled-tasks"])
 
 TASK_NOT_FOUND_MSG = "Scheduled task not found"
 UNAUTHORIZED_MSG = "Not authorized to access this task"
+
+
+def _check_task_ownership(task, user_id: str, user: dict) -> None:
+    """Verify the requesting user owns the task or is an admin for namespace tasks.
+
+    Raises HTTPException(403) if the check fails.
+    """
+    if task.user_id and task.user_id != user_id:
+        raise HTTPException(status_code=403, detail=UNAUTHORIZED_MSG)
+    elif not task.user_id and "admin" not in user.get("roles", []):
+        raise HTTPException(status_code=403, detail="Only administrators can modify namespace-level tasks")
 
 
 def get_scheduler_service():
@@ -198,7 +209,6 @@ async def preview_schedule(
 
             current = now
             for _ in range(request.count):
-                from datetime import timedelta
                 current = current + timedelta(seconds=seconds)
                 next_times.append(current.isoformat())
         else:
@@ -487,10 +497,7 @@ async def update_scheduled_task(
         if not existing_task:
             raise HTTPException(status_code=404, detail=TASK_NOT_FOUND_MSG)
 
-        if existing_task.user_id and existing_task.user_id != user_id:
-            raise HTTPException(status_code=403, detail=UNAUTHORIZED_MSG)
-        elif not existing_task.user_id and "admin" not in user.get("roles", []):
-            raise HTTPException(status_code=403, detail="Only administrators can modify namespace-level tasks")
+        _check_task_ownership(existing_task, user_id, user)
 
         # Phase 3.5: Config-sourced tasks are read-only except enable/disable
         if existing_task.source == "config":
@@ -525,7 +532,7 @@ async def update_scheduled_task(
 
         update_data = request.dict(exclude_none=True)
 
-        if "task_message" in update_data:
+        if "task_message" in update_data and request.task_message is not None:
             update_data["task_message"] = [part.dict() for part in request.task_message]
 
         if "notification_config" in update_data and request.notification_config:
@@ -568,10 +575,7 @@ async def delete_scheduled_task(
         if not task:
             raise HTTPException(status_code=404, detail=TASK_NOT_FOUND_MSG)
 
-        if task.user_id and task.user_id != user_id:
-            raise HTTPException(status_code=403, detail=UNAUTHORIZED_MSG)
-        elif not task.user_id and "admin" not in user.get("roles", []):
-            raise HTTPException(status_code=403, detail="Only administrators can modify namespace-level tasks")
+        _check_task_ownership(task, user_id, user)
 
         deleted = repo.soft_delete(db, task_id, user_id)
         db.commit()
@@ -606,10 +610,7 @@ async def enable_scheduled_task(
         task = repo.find_by_id(db, task_id, user_id=user_id)
         if not task:
             raise HTTPException(status_code=404, detail=TASK_NOT_FOUND_MSG)
-        if task.user_id and task.user_id != user_id:
-            raise HTTPException(status_code=403, detail=UNAUTHORIZED_MSG)
-        elif not task.user_id and "admin" not in user.get("roles", []):
-            raise HTTPException(status_code=403, detail="Only administrators can modify namespace-level tasks")
+        _check_task_ownership(task, user_id, user)
 
         enabled_task = repo.enable_task(db, task_id)
         db.commit()
@@ -644,10 +645,7 @@ async def disable_scheduled_task(
         task = repo.find_by_id(db, task_id, user_id=user_id)
         if not task:
             raise HTTPException(status_code=404, detail=TASK_NOT_FOUND_MSG)
-        if task.user_id and task.user_id != user_id:
-            raise HTTPException(status_code=403, detail=UNAUTHORIZED_MSG)
-        elif not task.user_id and "admin" not in user.get("roles", []):
-            raise HTTPException(status_code=403, detail="Only administrators can modify namespace-level tasks")
+        _check_task_ownership(task, user_id, user)
 
         disabled_task = repo.disable_task(db, task_id)
         db.commit()

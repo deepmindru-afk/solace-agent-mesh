@@ -49,6 +49,12 @@ async def get_all_sessions(
     user: dict = Depends(get_current_user),
     session_service: SessionService = Depends(get_session_business_service),
 ):
+    _VALID_SOURCES = {"chat", "scheduler"}
+    if source is not None and source not in _VALID_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid source filter: {source}. Must be one of: {', '.join(sorted(_VALID_SOURCES))}",
+        )
     user_id = user.get("id")
     log_msg = f"User '{user_id}' is listing sessions with pagination (page={page_number}, size={page_size})"
     if project_id:

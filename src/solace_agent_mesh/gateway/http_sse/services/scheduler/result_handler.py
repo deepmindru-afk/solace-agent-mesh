@@ -251,7 +251,7 @@ class ResultHandler:
         """Handle task execution error."""
         log.warning(
             "%s Handling error for execution %s: %s",
-            self.log_prefix, execution_id, error.message,
+            self.log_prefix, execution_id, _sanitize_error_message(error.message),
         )
 
         try:

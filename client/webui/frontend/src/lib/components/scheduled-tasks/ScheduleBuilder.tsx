@@ -21,7 +21,15 @@ interface ScheduleConfig {
 
 // Convert schedule config to cron expression
 function scheduleToCron(config: ScheduleConfig): string {
-    const [hours12, minutes] = config.time.split(":").map(Number);
+    const parts = config.time.split(":");
+    const hours12 = Number(parts[0]);
+    const minutes = Number(parts[1]);
+
+    // Guard against partial/invalid time input producing NaN in cron
+    if (isNaN(hours12) || isNaN(minutes)) {
+        return "0 9 * * *"; // Safe default
+    }
+
     let hour = hours12;
 
     // Convert 12-hour to 24-hour format
