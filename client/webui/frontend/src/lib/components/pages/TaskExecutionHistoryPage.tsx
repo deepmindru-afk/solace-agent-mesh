@@ -375,8 +375,21 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
 
                                 {/* Agent Response */}
                                 <div className="space-y-2">
-                                    <Label className="text-[var(--color-secondaryText-wMain)]">Response</Label>
+                                    <Label className="text-[var(--color-secondaryText-wMain)]">Response (Summary)</Label>
                                     {renderResponse(selectedExecution)}
+                                    <p className="text-muted-foreground text-xs">
+                                        This is a truncated summary.{" "}
+                                        <button
+                                            className="hover:text-foreground underline"
+                                            onClick={async () => {
+                                                await handleSwitchSession(`scheduled_${selectedExecution.id}`);
+                                                navigate("/chat");
+                                            }}
+                                        >
+                                            Go to Chat
+                                        </button>{" "}
+                                        for the full response with inline artifacts.
+                                    </p>
                                 </div>
 
                                 {/* Artifacts */}

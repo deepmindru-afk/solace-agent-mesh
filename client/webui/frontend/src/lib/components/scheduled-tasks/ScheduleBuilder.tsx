@@ -21,14 +21,14 @@ interface ScheduleConfig {
 
 // Convert schedule config to cron expression
 function scheduleToCron(config: ScheduleConfig): string {
-    const [hours24, minutes] = config.time.split(":").map(Number);
-    let hour = hours24;
+    const [hours12, minutes] = config.time.split(":").map(Number);
+    let hour = hours12;
 
     // Convert 12-hour to 24-hour format
-    if (config.ampm === "PM" && hour !== 12) {
-        hour += 12;
-    } else if (config.ampm === "AM" && hour === 12) {
-        hour = 0;
+    if (config.ampm === "PM") {
+        hour = hours12 === 12 ? 12 : hours12 + 12;
+    } else if (config.ampm === "AM") {
+        hour = hours12 === 12 ? 0 : hours12;
     }
 
     switch (config.frequency) {

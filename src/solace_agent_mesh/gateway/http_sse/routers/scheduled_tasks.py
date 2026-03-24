@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any
 from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session as DBSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..dependencies import get_db, get_config_resolver, get_user_config, get_agent_registry
 from ..repository.scheduled_task_repository import ScheduledTaskRepository
@@ -72,7 +72,7 @@ def _validate_scheduling_permission(user_config: dict, config_resolver) -> None:
 
 class TaskBuilderChatRequest(BaseModel):
     """Request for task builder chat interaction."""
-    message: str
+    message: str = Field(..., max_length=5000)
     conversation_history: List[Dict[str, str]] = []
     current_task: Dict[str, Any] = {}
     available_agents: List[str] = []
@@ -110,8 +110,8 @@ async def task_builder_chat(
     config_resolver=Depends(get_config_resolver),
     assistant: TaskBuilderAssistant = Depends(get_task_builder_assistant),
 ):
-    _validate_scheduling_permission(user_config, config_resolver)
     """AI-assisted task builder chat endpoint."""
+    _validate_scheduling_permission(user_config, config_resolver)
     user_id = user.get("id")
     try:
         response = await assistant.process_message(
@@ -142,8 +142,8 @@ async def get_task_builder_greeting(
     config_resolver=Depends(get_config_resolver),
     assistant: TaskBuilderAssistant = Depends(get_task_builder_assistant),
 ):
-    _validate_scheduling_permission(user_config, config_resolver)
     """Get initial greeting message for task builder."""
+    _validate_scheduling_permission(user_config, config_resolver)
     try:
         response = assistant.get_initial_greeting()
         return TaskBuilderChatResponse(

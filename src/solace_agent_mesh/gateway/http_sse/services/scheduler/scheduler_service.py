@@ -610,10 +610,14 @@ class SchedulerService:
                     sess.add(session_record)
                     sess.commit()
             except Exception as e:
-                log.warning(
+                log.error(
                     "[SchedulerService:%s] Failed to create session for execution %s: %s",
                     self.instance_id, execution_id, e,
+                    exc_info=True,
                 )
+                raise RuntimeError(
+                    "Cannot proceed without a valid session for execution %s" % execution_id
+                ) from e
 
             # --- Step 2: Build A2A message (no session held) ---
             message_parts = []

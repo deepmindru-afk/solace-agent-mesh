@@ -1093,7 +1093,7 @@ async def get_latest_artifact(
         log.exception("%s Error loading artifact: %s", log_prefix, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load artifact: {str(e)}",
+            detail="Failed to load artifact",
         )
 
 
@@ -1401,7 +1401,7 @@ async def get_scheduled_task_artifact(
         log.exception("%s Error loading artifact: %s", log_prefix, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load artifact: {str(e)}",
+            detail="Failed to load artifact",
         )
 
 

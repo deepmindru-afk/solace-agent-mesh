@@ -157,7 +157,7 @@ class NotificationService:
                 elif channel_type == "broker_topic":
                     await self._send_broker_notification(channel_config, payload, task)
                 else:
-                    log.warning(f"{self.log_prefix} Unknown notification channel type: {channel_type}")
+                    log.warning("%s Unknown notification channel type: %s", self.log_prefix, channel_type)
                     continue
 
                 notifications_sent.append({
@@ -168,7 +168,8 @@ class NotificationService:
 
             except Exception as e:
                 log.error(
-                    f"{self.log_prefix} Failed to send {channel_type} notification: {e}",
+                    "%s Failed to send %s notification: %s",
+                    self.log_prefix, channel_type, e,
                     exc_info=True,
                 )
                 notifications_sent.append({
@@ -186,7 +187,7 @@ class NotificationService:
                         db_execution.notifications_sent = notifications_sent
                         session.commit()
             except Exception as e:
-                log.error(f"{self.log_prefix} Failed to update notification status: {e}", exc_info=True)
+                log.error("%s Failed to update notification status: %s", self.log_prefix, e, exc_info=True)
 
     def _prepare_notification_payload(
         self,
@@ -226,7 +227,7 @@ class NotificationService:
                     event_type="scheduled_task_complete",
                 )
             except Exception as e:
-                log.error(f"{self.log_prefix} Failed to send SSE notification: {e}", exc_info=True)
+                log.error("%s Failed to send SSE notification: %s", self.log_prefix, e, exc_info=True)
                 raise
 
     async def _send_webhook_notification(self, config, payload, task):
@@ -293,7 +294,7 @@ class NotificationService:
             return payload
 
     async def _send_email_notification(self, config, payload, task):
-        log.info(f"{self.log_prefix} Email notification requested for task {task.id} (not yet implemented)")
+        log.info("%s Email notification requested for task %s (not yet implemented)", self.log_prefix, task.id)
 
     async def _send_broker_notification(self, config, payload, task):
         topic = config.get("topic")
@@ -327,4 +328,4 @@ class NotificationService:
         try:
             await self.http_client.aclose()
         except Exception as e:
-            log.error(f"{self.log_prefix} Error closing HTTP client: {e}")
+            log.error("%s Error closing HTTP client: %s", self.log_prefix, e)

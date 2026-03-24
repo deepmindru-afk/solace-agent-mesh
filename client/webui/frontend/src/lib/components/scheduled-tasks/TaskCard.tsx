@@ -4,6 +4,7 @@ import { Pencil, Trash2, Calendar, Clock, MoreHorizontal, Play, Pause, History }
 import { GridCard } from "@/lib/components/common";
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/lib/components/ui";
 import type { ScheduledTask, TaskStatus } from "@/lib/types/scheduled-tasks";
+import { formatSchedule } from "./utils";
 
 interface TaskCardProps {
     task: ScheduledTask;
@@ -40,58 +41,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isSelected = false, on
         e.stopPropagation();
         setDropdownOpen(false);
         onViewExecutions(task);
-    };
-
-    const formatSchedule = (task: ScheduledTask): string => {
-        if (task.scheduleType === "cron") {
-            // Parse common cron patterns into human-readable format
-            const cron = task.scheduleExpression;
-            const parts = cron.trim().split(/\s+/);
-
-            if (parts.length === 5) {
-                const [minute, hour, dayOfMonth, , dayOfWeek] = parts;
-
-                // Hourly pattern (e.g., "0 */6 * * *")
-                if (hour.includes("/")) {
-                    const interval = hour.split("/")[1];
-                    return `Every ${interval} hours`;
-                }
-
-                // Weekly pattern (e.g., "0 9 * * 1,3,5")
-                if (dayOfWeek !== "*") {
-                    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                    const days = dayOfWeek
-                        .split(",")
-                        .map(d => dayNames[parseInt(d)])
-                        .join(", ");
-                    const time = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
-                    return `${days} at ${time}`;
-                }
-
-                // Monthly pattern (e.g., "0 9 15 * *")
-                if (dayOfMonth !== "*") {
-                    const time = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
-                    return `Monthly on day ${dayOfMonth} at ${time}`;
-                }
-
-                // Daily pattern (e.g., "0 9 * * *")
-                if (hour !== "*" && minute !== "*") {
-                    const time = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
-                    return `Daily at ${time}`;
-                }
-            }
-
-            // Fallback to showing cron expression
-            return `Cron: ${cron}`;
-        } else if (task.scheduleType === "interval") {
-            return `Every ${task.scheduleExpression}`;
-        } else {
-            try {
-                return `Once at ${new Date(task.scheduleExpression).toLocaleString()}`;
-            } catch {
-                return `Once at ${task.scheduleExpression}`;
-            }
-        }
     };
 
     const statusConfig: Record<TaskStatus, { label: string; className: string }> = {

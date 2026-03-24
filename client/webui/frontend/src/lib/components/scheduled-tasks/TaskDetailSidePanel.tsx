@@ -2,6 +2,7 @@ import React from "react";
 import { X, Calendar, User, MoreHorizontal, Pencil, Trash2, History, Play, Pause } from "lucide-react";
 import type { ScheduledTask } from "@/lib/types/scheduled-tasks";
 import { Button, Tooltip, TooltipContent, TooltipTrigger, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Badge } from "@/lib/components/ui";
+import { formatSchedule } from "./utils";
 
 interface TaskDetailSidePanelProps {
     task: ScheduledTask | null;
@@ -11,41 +12,6 @@ interface TaskDetailSidePanelProps {
     onViewExecutions: (task: ScheduledTask) => void;
     onToggleEnabled: (task: ScheduledTask) => void;
 }
-
-// Helper to format schedule in human-readable form
-const formatSchedule = (task: ScheduledTask): string => {
-    if (task.scheduleType === "cron") {
-        const expr = task.scheduleExpression;
-        // Parse common cron patterns
-        if (expr === "0 9 * * *") return "Daily at 9:00 AM";
-        if (expr === "0 0 * * 0") return "Weekly on Sunday at midnight";
-        if (expr === "0 0 1 * *") return "Monthly on the 1st at midnight";
-        if (expr.startsWith("0 */")) {
-            const hours = expr.split(" ")[1].replace("*/", "");
-            return `Every ${hours} hours`;
-        }
-        return `Cron: ${expr}`;
-    } else if (task.scheduleType === "interval") {
-        return `Every ${task.scheduleExpression}`;
-    } else {
-        // One-time task - format the ISO timestamp
-        try {
-            const date = new Date(task.scheduleExpression);
-            const formatted = date.toLocaleString("en-US", {
-                weekday: "short",
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true,
-            });
-            return `One time: ${formatted}`;
-        } catch {
-            return `One time: ${task.scheduleExpression}`;
-        }
-    }
-};
 
 // Helper to format timestamp
 const formatTimestamp = (timestamp: number): string => {
