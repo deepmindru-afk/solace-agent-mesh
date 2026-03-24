@@ -1,7 +1,7 @@
 """Create scheduled tasks tables
 
 Revision ID: 20260319_scheduled_tasks
-Revises: 20260123_add_share_links
+Revises: 20260320_project_user_pins
 Create Date: 2026-03-19 00:00:00.000000
 
 Creates tables for the scheduled tasks feature:
@@ -17,7 +17,7 @@ from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = '20260319_scheduled_tasks'
-down_revision: Union[str, None] = '20260318_project_is_pinned'
+down_revision: Union[str, None] = '20260320_project_user_pins'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
