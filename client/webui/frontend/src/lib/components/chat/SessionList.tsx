@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useInView } from "react-intersection-observer";
 import { useNavigate } from "react-router-dom";
-import { Trash2, Check, X, Pencil, MessageCircle, FolderInput, MoreHorizontal, PanelsTopLeft, Sparkles, Loader2, Share2, UserSearch } from "lucide-react";
+import { Trash2, Check, X, Pencil, MessageCircle, FolderInput, MoreHorizontal, PanelsTopLeft, Sparkles, Loader2, Share2, UserSearch, CalendarClock } from "lucide-react";
 import { cn, formatTimestamp, getErrorMessage } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useSharedWithMe } from "@/lib/api/share";
@@ -139,6 +139,7 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
     const [hasMore, setHasMore] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [selectedProject, setSelectedProject] = useState<string>("all");
+    const [sourceFilter, setSourceFilter] = useState<string>("all");
     const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
     const [sessionToMove, setSessionToMove] = useState<Session | null>(null);
     const [regeneratingTitleForSession, setRegeneratingTitleForSession] = useState<string | null>(null);
@@ -154,27 +155,34 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
         triggerOnce: false,
     });
 
-    const fetchSessions = useCallback(async (pageNumber: number = 1, append: boolean = false) => {
-        setIsLoading(true);
+    const fetchSessions = useCallback(
+        async (pageNumber: number = 1, append: boolean = false) => {
+            setIsLoading(true);
 
-        try {
-            const result: PaginatedSessionsResponse = await api.webui.get(`/api/v1/sessions?pageNumber=${pageNumber}&pageSize=20`);
+            try {
+                let url = `/api/v1/sessions?pageNumber=${pageNumber}&pageSize=20`;
+                if (sourceFilter !== "all") {
+                    url += `&source=${sourceFilter}`;
+                }
+                const result: PaginatedSessionsResponse = await api.webui.get(url);
 
-            if (append) {
-                setSessions(prev => [...prev, ...result.data]);
-            } else {
-                setSessions(result.data);
+                if (append) {
+                    setSessions(prev => [...prev, ...result.data]);
+                } else {
+                    setSessions(result.data);
+                }
+
+                // Use metadata to determine if there are more pages
+                setHasMore(result.meta.pagination.nextPage !== null);
+                setCurrentPage(pageNumber);
+            } catch (error) {
+                console.error("An error occurred while fetching sessions:", error);
+            } finally {
+                setIsLoading(false);
             }
-
-            // Use metadata to determine if there are more pages
-            setHasMore(result.meta.pagination.nextPage !== null);
-            setCurrentPage(pageNumber);
-        } catch (error) {
-            console.error("An error occurred while fetching sessions:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+        },
+        [sourceFilter]
+    );
 
     useEffect(() => {
         fetchSessions(1, false);
@@ -467,23 +475,43 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                     <SessionSearch onSessionSelect={handleSwitchSession} projectId={selectedProjectId} />
                 </div>
 
-                {/* Project Filter - Only show when persistence is enabled */}
-                {persistenceEnabled && projectNames.length > 0 && (
-                    <div className="flex items-center gap-2 pr-4">
-                        <label className="text-sm font-medium">Project:</label>
-                        <Select value={selectedProject} onValueChange={setSelectedProject}>
-                            <SelectTrigger className="flex-1 rounded-md">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Chats</SelectItem>
-                                {projectNames.map(projectName => (
-                                    <SelectItem key={projectName} value={projectName}>
-                                        {projectName}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                {/* Filters row */}
+                {persistenceEnabled && (
+                    <div className="flex flex-col gap-2 pr-4">
+                        {/* Source Filter */}
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium">Show:</label>
+                            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                                <SelectTrigger className="flex-1 rounded-md">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Sessions</SelectItem>
+                                    <SelectItem value="chat">Chat Only</SelectItem>
+                                    <SelectItem value="scheduler">Scheduled Only</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {/* Project Filter */}
+                        {projectNames.length > 0 && (
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium">Project:</label>
+                                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                                    <SelectTrigger className="flex-1 rounded-md">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Chats</SelectItem>
+                                        {projectNames.map(projectName => (
+                                            <SelectItem key={projectName} value={projectName}>
+                                                {projectName}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -547,7 +575,15 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                                             <div className="flex items-center gap-2">
                                                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                                                     <div className="flex items-center gap-2">
-                                                        <SessionName session={session} respondingSessionId={respondingSessionId} />
+                                                        {session.source === "scheduler" && (
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <CalendarClock className="h-3.5 w-3.5 flex-shrink-0 text-(--secondary-text-wMain)" />
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>Scheduled task execution</TooltipContent>
+                                                            </Tooltip>
+                                                        )}
+                                                        <SessionName session={session} respondingSessionId={respondingSessionId} isSelected={session.id === sessionId} />
                                                         {session.hasRunningBackgroundTask && (
                                                             <Tooltip>
                                                                 <TooltipTrigger asChild>

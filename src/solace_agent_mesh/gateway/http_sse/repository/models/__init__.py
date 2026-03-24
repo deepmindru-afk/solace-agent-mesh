@@ -17,7 +17,6 @@ from .prompt_model import PromptGroupModel, PromptModel, PromptGroupUserModel
 from .scheduled_task_model import (
     ScheduledTaskModel,
     ScheduledTaskExecutionModel,
-    SchedulerLockModel,
     ScheduleType,
     ExecutionStatus,
 )
@@ -62,7 +61,6 @@ __all__ = [
     "SharedSessionView",
     "ScheduledTaskModel",
     "ScheduledTaskExecutionModel",
-    "SchedulerLockModel",
     "ScheduleType",
     "ExecutionStatus",
 ]

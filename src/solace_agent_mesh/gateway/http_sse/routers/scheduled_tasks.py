@@ -292,7 +292,7 @@ async def create_scheduled_task(
         task = repo.create_task(db, task_data)
         db.commit()
 
-        if task.enabled and await scheduler_service.is_leader():
+        if task.enabled:
             try:
                 await scheduler_service._schedule_task(task)
             except Exception as e:
@@ -429,11 +429,9 @@ async def get_scheduler_status(
         status_info = {
             "instance_id": getattr(scheduler_service, 'instance_id', 'unknown'),
             "namespace": getattr(scheduler_service, 'namespace', 'unknown'),
-            "is_leader": False,
             "active_tasks_count": len(getattr(scheduler_service, 'active_tasks', {})),
             "running_executions_count": len(getattr(scheduler_service, 'running_executions', {})),
             "scheduler_running": getattr(getattr(scheduler_service, 'scheduler', None), 'running', False),
-            "leader_info": None,
         }
         return SchedulerStatusResponse(**status_info)
     except Exception as e:
@@ -537,7 +535,7 @@ async def update_scheduled_task(
         db.commit()
 
         schedule_changed = any(k in update_data for k in ["schedule_type", "schedule_expression", "timezone"])
-        if schedule_changed and updated_task.enabled and await scheduler_service.is_leader():
+        if schedule_changed and updated_task.enabled:
             try:
                 await scheduler_service._unschedule_task(task_id)
                 await scheduler_service._schedule_task(updated_task)
@@ -581,10 +579,9 @@ async def delete_scheduled_task(
         if not deleted:
             raise HTTPException(status_code=404, detail=TASK_NOT_FOUND_MSG)
 
-        if await scheduler_service.is_leader():
-            try:
-                await scheduler_service._unschedule_task(task_id)
-            except Exception as e:
+        try:
+            await scheduler_service._unschedule_task(task_id)
+        except Exception as e:
                 log.error("Failed to unschedule task %s: %s", task_id, e)
 
     except HTTPException:
@@ -617,7 +614,7 @@ async def enable_scheduled_task(
         enabled_task = repo.enable_task(db, task_id)
         db.commit()
 
-        if enabled_task and await scheduler_service.is_leader():
+        if enabled_task:
             try:
                 await scheduler_service._schedule_task(enabled_task)
             except Exception as e:
@@ -655,7 +652,7 @@ async def disable_scheduled_task(
         disabled_task = repo.disable_task(db, task_id)
         db.commit()
 
-        if disabled_task and await scheduler_service.is_leader():
+        if disabled_task:
             try:
                 await scheduler_service._unschedule_task(task_id)
             except Exception as e:
@@ -669,55 +666,6 @@ async def disable_scheduled_task(
         db.rollback()
         log.error("Error disabling scheduled task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to disable scheduled task") from e
-
-
-# Phase 3.1: Reactivate endpoint
-@router.post("/{task_id}/reactivate", response_model=TaskActionResponse)
-async def reactivate_scheduled_task(
-    task_id: str,
-    db: DBSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
-    scheduler_service=Depends(get_scheduler_service),
-):
-    """Reactivate a task that entered error state after consecutive failures."""
-    user_id = user.get("id")
-    try:
-        repo = ScheduledTaskRepository()
-        task = repo.find_by_id(db, task_id, user_id=user_id)
-        if not task:
-            raise HTTPException(status_code=404, detail=TASK_NOT_FOUND_MSG)
-        if task.user_id and task.user_id != user_id:
-            raise HTTPException(status_code=403, detail=UNAUTHORIZED_MSG)
-        elif not task.user_id and "admin" not in user.get("roles", []):
-            raise HTTPException(status_code=403, detail="Only administrators can modify namespace-level tasks")
-
-        if task.status != "error":
-            raise HTTPException(status_code=400, detail="Task is not in error state")
-
-        update_data = {
-            "status": "active",
-            "consecutive_failure_count": 0,
-        }
-        repo.update_task(db, task_id, update_data)
-        db.commit()
-
-        # Re-schedule if enabled and leader
-        if task.enabled and await scheduler_service.is_leader():
-            try:
-                refreshed = repo.find_by_id(db, task_id)
-                if refreshed:
-                    await scheduler_service._schedule_task(refreshed)
-            except Exception as e:
-                log.error("Failed to reschedule reactivated task %s: %s", task_id, e)
-
-        return TaskActionResponse(success=True, message="Task reactivated successfully", task_id=task_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        log.error("Error reactivating task %s: %s", task_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to reactivate task") from e
 
 
 @router.get("/{task_id}/executions", response_model=ExecutionListResponse)

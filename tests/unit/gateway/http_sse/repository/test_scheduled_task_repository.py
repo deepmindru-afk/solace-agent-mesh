@@ -23,7 +23,6 @@ from solace_agent_mesh.gateway.http_sse.repository.models.scheduled_task_model i
     ScheduledTaskExecutionModel,
     ScheduledTaskModel,
     ScheduleType,
-    SchedulerLockModel,
 )
 from solace_agent_mesh.gateway.http_sse.repository.scheduled_task_repository import (
     ScheduledTaskRepository,
@@ -73,7 +72,6 @@ def _make_task_data(**overrides) -> dict:
         "target_type": "agent",
         "task_message": [{"type": "text", "text": "hello"}],
         "enabled": True,
-        "status": "active",
         "max_retries": 0,
         "retry_delay_seconds": 60,
         "timeout_seconds": 3600,
@@ -404,35 +402,23 @@ class TestDeleteOldestExecutions:
 class TestEnableDisableTask:
     """Tests for enable_task and disable_task state transitions."""
 
-    def test_enable_task_sets_enabled_and_active(self, repo, session):
-        data = _make_task_data(enabled=False, status="paused")
+    def test_enable_task_sets_enabled(self, repo, session):
+        data = _make_task_data(enabled=False)
         repo.create_task(session, data)
         session.flush()
 
         task = repo.enable_task(session, data["id"])
         assert task is not None
         assert task.enabled is True
-        assert task.status == "active"
 
-    def test_disable_task_sets_disabled_and_paused(self, repo, session):
-        data = _make_task_data(enabled=True, status="active")
+    def test_disable_task_sets_disabled(self, repo, session):
+        data = _make_task_data(enabled=True)
         repo.create_task(session, data)
         session.flush()
 
         task = repo.disable_task(session, data["id"])
         assert task is not None
         assert task.enabled is False
-        assert task.status == "paused"
-
-    def test_disable_task_preserves_error_status(self, repo, session):
-        data = _make_task_data(enabled=True, status="error")
-        repo.create_task(session, data)
-        session.flush()
-
-        task = repo.disable_task(session, data["id"])
-        assert task is not None
-        assert task.enabled is False
-        assert task.status == "error"
 
     def test_enable_returns_none_for_deleted_task(self, repo, session):
         data = _make_task_data()

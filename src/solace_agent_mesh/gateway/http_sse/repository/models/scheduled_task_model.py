@@ -70,7 +70,6 @@ class ScheduledTaskModel(Base):
 
     # Execution Control
     enabled = Column(Boolean, nullable=False, default=True, index=True)
-    status = Column(String, nullable=False, default="active")  # active/paused/error
     max_retries = Column(Integer, nullable=False, default=0)
     retry_delay_seconds = Column(Integer, nullable=False, default=60)
     timeout_seconds = Column(Integer, nullable=False, default=3600)
@@ -153,19 +152,3 @@ class ScheduledTaskExecutionModel(Base):
     )
 
 
-class SchedulerLockModel(Base):
-    """SQLAlchemy model for distributed scheduler leader election lock."""
-
-    __tablename__ = "scheduler_locks"
-
-    # Single row lock table
-    id = Column(Integer, primary_key=True, default=1)
-
-    # Leader information
-    leader_id = Column(String, nullable=False)
-    leader_namespace = Column(String, nullable=False)
-
-    # Lock timing (epoch milliseconds)
-    acquired_at = Column(BigInteger, nullable=False)
-    expires_at = Column(BigInteger, nullable=False, index=True)
-    heartbeat_at = Column(BigInteger, nullable=False)

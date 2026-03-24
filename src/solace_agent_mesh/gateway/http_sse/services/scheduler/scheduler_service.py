@@ -1,19 +1,16 @@
 """
 Core scheduler service for managing and executing scheduled tasks.
-Integrates with APScheduler for cron/interval scheduling and coordinates
-with leader election for distributed operation.
+Integrates with APScheduler for cron/interval scheduling.
 
-Supports two modes:
-1. Default mode: Uses APScheduler with in-memory result tracking (ResultHandler)
-2. K8s mode: Uses StatelessResultCollector for horizontal scaling and optionally
-   K8SCronJobManager for native Kubernetes CronJob scheduling
+Single-instance architecture — no leader election or multi-instance coordination.
+Tasks run forever while enabled; failures are tracked for observability only.
 """
 
 import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -32,9 +29,7 @@ from ...repository.models import (
     ScheduleType,
 )
 from ...shared import now_epoch_ms
-from .leader_election import LeaderElection
 from .result_handler import ResultHandler
-from .stateless_result_collector import StatelessResultCollector
 from .notification_service import NotificationService
 
 log = logging.getLogger(__name__)
@@ -51,7 +46,7 @@ _SAFE_METADATA_KEYS = frozenset({
 
 class SchedulerService:
     """
-    Core scheduling service with distributed support.
+    Core scheduling service for single-instance deployments.
     Manages scheduled task definitions and executes them via the agent mesh.
     """
 
@@ -75,28 +70,8 @@ class SchedulerService:
         self.default_timeout_seconds = config.get("default_timeout_seconds", 3600)
         self.max_concurrent_executions = config.get("max_concurrent_executions", 10)
         self.stale_execution_timeout_seconds = config.get("stale_execution_timeout_seconds", 7200)
-        # FIX: Reduced stale cleanup interval from 3600s to 600s
         self.stale_cleanup_interval_seconds = config.get("stale_cleanup_interval_seconds", 600)
 
-        # K8s mode configuration
-        self.use_stateless_collector = config.get("use_stateless_collector", False)
-        self.k8s_enabled = config.get("k8s_enabled", False)
-        self.k8s_config = config.get("k8s", {})
-
-        # Leader election configuration
-        leader_config = config.get("leader_election", {})
-        heartbeat_interval = leader_config.get("heartbeat_interval_seconds", 30)
-        lease_duration = leader_config.get("lease_duration_seconds", 60)
-
-        self.leader_election = LeaderElection(
-            session_factory=session_factory,
-            instance_id=instance_id,
-            namespace=namespace,
-            heartbeat_interval_seconds=heartbeat_interval,
-            lease_duration_seconds=lease_duration,
-        )
-
-        # FIX: Set misfire_grace_time and coalesce on AsyncIOScheduler
         self.scheduler = AsyncIOScheduler(
             timezone="UTC",
             job_defaults={
@@ -109,66 +84,12 @@ class SchedulerService:
         self.running_executions: Dict[str, asyncio.Task] = {}
         self._execution_lock = asyncio.Lock()
 
-        # Initialize result handler
-        self.result_handler: Union[ResultHandler, StatelessResultCollector]
-        if self.use_stateless_collector:
-            log.info(
-                "[SchedulerService:%s] Using StatelessResultCollector for K8s horizontal scaling",
-                instance_id,
-            )
-            self.result_handler = StatelessResultCollector(
-                session_factory=session_factory,
-                namespace=namespace,
-                instance_id=instance_id,
-            )
-        else:
-            self.result_handler = ResultHandler(
-                session_factory=session_factory,
-                namespace=namespace,
-                instance_id=instance_id,
-            )
-
-        # Initialize K8s CronJob manager if enabled
-        self.k8s_manager = None
-        if self.k8s_enabled:
-            try:
-                from .k8s_manager import K8SCronJobManager
-
-                k8s_namespace = self.k8s_config.get("namespace", "default")
-                executor_image = self.k8s_config.get("executor_image")
-                database_url_secret = self.k8s_config.get("database_url_secret", "sam-scheduler-db")
-                broker_config_secret = self.k8s_config.get("broker_config_secret", "sam-scheduler-broker")
-
-                if not executor_image:
-                    log.warning(
-                        "[SchedulerService:%s] K8s enabled but no executor_image configured. "
-                        "K8s CronJob management will be disabled.",
-                        instance_id,
-                    )
-                else:
-                    self.k8s_manager = K8SCronJobManager(
-                        namespace=k8s_namespace,
-                        executor_image=executor_image,
-                        database_url_secret=database_url_secret,
-                        broker_config_secret=broker_config_secret,
-                        a2a_namespace=namespace,
-                    )
-                    log.info(
-                        "[SchedulerService:%s] K8s CronJob manager initialized "
-                        "(namespace: %s, image: %s)",
-                        instance_id, k8s_namespace, executor_image,
-                    )
-            except ImportError as e:
-                log.warning(
-                    "[SchedulerService:%s] K8s enabled but kubernetes package not installed: %s",
-                    instance_id, e,
-                )
-            except Exception as e:
-                log.error(
-                    "[SchedulerService:%s] Failed to initialize K8s manager: %s",
-                    instance_id, e,
-                    exc_info=True,
-                )
+        # Initialize result handler (in-memory tracking)
+        self.result_handler = ResultHandler(
+            session_factory=session_factory,
+            namespace=namespace,
+            instance_id=instance_id,
+        )
 
         # Initialize notification service
         self.notification_service = NotificationService(
@@ -180,23 +101,21 @@ class SchedulerService:
         )
 
         self._stale_cleanup_task: Optional[asyncio.Task] = None
-        self._monitor_task: Optional[asyncio.Task] = None
 
         log.info(
-            "[SchedulerService:%s] Initialized for namespace '%s' "
-            "(stateless_collector=%s, k8s_enabled=%s)",
-            instance_id, namespace, self.use_stateless_collector, self.k8s_enabled,
+            "[SchedulerService:%s] Initialized for namespace '%s'",
+            instance_id, namespace,
         )
 
     async def start(self):
         """Start the scheduler service."""
         log.info("[SchedulerService:%s] Starting scheduler service", self.instance_id)
 
-        await self.leader_election.start()
         self.scheduler.start()
         log.info("[SchedulerService:%s] APScheduler started", self.instance_id)
 
-        self._monitor_task = asyncio.create_task(self._monitor_leadership())
+        # Single instance — load tasks directly on startup
+        await self._load_scheduled_tasks()
 
         self._stale_cleanup_task = asyncio.create_task(self._stale_cleanup_loop())
         log.info("[SchedulerService:%s] Stale cleanup task started", self.instance_id)
@@ -205,15 +124,7 @@ class SchedulerService:
         """Stop the scheduler service."""
         log.info("[SchedulerService:%s] Stopping scheduler service", self.instance_id)
 
-        await self.leader_election.stop()
         self.scheduler.shutdown(wait=False)
-
-        if self._monitor_task and not self._monitor_task.done():
-            self._monitor_task.cancel()
-            try:
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
 
         if self._stale_cleanup_task and not self._stale_cleanup_task.done():
             self._stale_cleanup_task.cancel()
@@ -234,9 +145,8 @@ class SchedulerService:
         while True:
             try:
                 await asyncio.sleep(self.stale_cleanup_interval_seconds)
-                if await self.leader_election.is_leader():
-                    log.info("[SchedulerService:%s] Running stale execution cleanup", self.instance_id)
-                    await self._cleanup_stale_executions()
+                log.info("[SchedulerService:%s] Running stale execution cleanup", self.instance_id)
+                await self._cleanup_stale_executions()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -250,10 +160,6 @@ class SchedulerService:
     async def _cleanup_stale_executions(self):
         """Clean up executions that have been running too long."""
         try:
-            if self.use_stateless_collector and hasattr(self.result_handler, 'cleanup_stale_executions'):
-                await self.result_handler.cleanup_stale_executions(self.stale_execution_timeout_seconds)
-                return
-
             cutoff_time = now_epoch_ms() - (self.stale_execution_timeout_seconds * 1000)
 
             with self.session_factory() as session:
@@ -272,14 +178,14 @@ class SchedulerService:
                     execution.completed_at = now_epoch_ms()
                     execution.error_message = f"Execution exceeded stale timeout of {self.stale_execution_timeout_seconds} seconds"
 
-                    if not self.use_stateless_collector and execution.a2a_task_id:
-                        if hasattr(self.result_handler, 'pending_executions_lock'):
-                            async with self.result_handler.pending_executions_lock:
-                                self.result_handler.pending_executions.pop(execution.a2a_task_id, None)
-                                self.result_handler.execution_sessions.pop(execution.id, None)
-                                event = self.result_handler.completion_events.pop(execution.id, None)
-                            if event:
-                                event.set()
+                    # Clean up in-memory tracking
+                    if execution.a2a_task_id and hasattr(self.result_handler, 'pending_executions_lock'):
+                        async with self.result_handler.pending_executions_lock:
+                            self.result_handler.pending_executions.pop(execution.a2a_task_id, None)
+                            self.result_handler.execution_sessions.pop(execution.id, None)
+                            event = self.result_handler.completion_events.pop(execution.id, None)
+                        if event:
+                            event.set()
 
                 session.commit()
 
@@ -296,65 +202,6 @@ class SchedulerService:
                 exc_info=True,
             )
 
-    async def _monitor_leadership(self):
-        """Monitor leadership status and react to changes."""
-        was_leader = False
-
-        while True:
-            try:
-                is_leader = await self.leader_election.is_leader()
-
-                if is_leader and not was_leader:
-                    log.info("[SchedulerService:%s] Became leader, loading tasks", self.instance_id)
-                    await self._on_become_leader()
-                    was_leader = True
-                elif not is_leader and was_leader:
-                    log.warning("[SchedulerService:%s] Lost leadership, unloading tasks", self.instance_id)
-                    await self._on_lose_leadership()
-                    was_leader = False
-
-                await asyncio.sleep(5)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                log.error(
-                    "[SchedulerService:%s] Error monitoring leadership: %s",
-                    self.instance_id, e,
-                    exc_info=True,
-                )
-                await asyncio.sleep(5)
-
-    async def _on_become_leader(self):
-        try:
-            await self._load_scheduled_tasks()
-        except Exception as e:
-            log.error(
-                "[SchedulerService:%s] Failed to load tasks on becoming leader: %s",
-                self.instance_id, e,
-                exc_info=True,
-            )
-
-    async def _on_lose_leadership(self):
-        try:
-            # Cancel in-flight executions to prevent duplicate execution when a new
-            # leader picks up the same tasks.
-            async with self._execution_lock:
-                for exec_id in list(self.running_executions.keys()):
-                    log.warning(
-                        "[SchedulerService:%s] Cancelling orphaned execution "
-                        "%s due to leadership loss",
-                        self.instance_id, exec_id,
-                    )
-                self.running_executions.clear()
-            await self._unload_all_tasks()
-        except Exception as e:
-            log.error(
-                "[SchedulerService:%s] Failed to unload tasks on losing leadership: %s",
-                self.instance_id, e,
-                exc_info=True,
-            )
-
     async def _load_scheduled_tasks(self):
         """Load all enabled scheduled tasks from database and schedule them."""
         log.info("[SchedulerService:%s] Loading scheduled tasks from database", self.instance_id)
@@ -367,8 +214,6 @@ class SchedulerService:
                         ScheduledTaskModel.enabled == True,
                         ScheduledTaskModel.namespace == self.namespace,
                         ScheduledTaskModel.deleted_at == None,
-                        # Only load active tasks (skip paused and error)
-                        ScheduledTaskModel.status == "active",
                     )
                 )
                 tasks = session.execute(stmt).scalars().all()
@@ -405,7 +250,7 @@ class SchedulerService:
                 )
 
     async def _schedule_task(self, task: ScheduledTaskModel):
-        """Schedule a single task in APScheduler or K8s CronJob."""
+        """Schedule a single task in APScheduler."""
         job_id = f"scheduled_task_{task.id}"
 
         log.info(
@@ -415,21 +260,6 @@ class SchedulerService:
         )
 
         try:
-            if self.k8s_manager:
-                success = await self.k8s_manager.sync_task(task)
-                if success:
-                    self.active_tasks[task.id] = {
-                        "job": None,
-                        "task_name": task.name,
-                        "schedule_type": task.schedule_type,
-                        "k8s_managed": True,
-                    }
-                    return
-                log.warning(
-                    "[SchedulerService:%s] Failed to sync task to K8s, falling back to APScheduler",
-                    self.instance_id,
-                )
-
             trigger = self._create_trigger(task)
 
             job = self.scheduler.add_job(
@@ -445,7 +275,6 @@ class SchedulerService:
                 "job": job,
                 "task_name": task.name,
                 "schedule_type": task.schedule_type,
-                "k8s_managed": False,
             }
 
             if job.next_run_time:
@@ -470,25 +299,10 @@ class SchedulerService:
             raise
 
     async def _unschedule_task(self, task_id: str):
-        """Remove a task from APScheduler or K8s CronJob."""
+        """Remove a task from APScheduler."""
         job_id = f"scheduled_task_{task_id}"
 
         if task_id in self.active_tasks:
-            task_info = self.active_tasks[task_id]
-
-            if task_info.get("k8s_managed") and self.k8s_manager:
-                try:
-                    schedule_type = task_info.get("schedule_type")
-                    await self.k8s_manager.delete_cronjob(task_id, schedule_type)
-                    del self.active_tasks[task_id]
-                    return
-                except Exception as e:
-                    log.error(
-                        "[SchedulerService:%s] Failed to delete K8s CronJob for task %s: %s",
-                        self.instance_id, task_id, e,
-                        exc_info=True,
-                    )
-
             try:
                 self.scheduler.remove_job(job_id)
                 del self.active_tasks[task_id]
@@ -586,11 +400,6 @@ class SchedulerService:
                         log.warning("[SchedulerService:%s] Task %s not found, disabled, or deleted", self.instance_id, task_id)
                         return
 
-                    # Skip tasks in error state
-                    if task.status == "error":
-                        log.warning("[SchedulerService:%s] Task %s is in error state, skipping", self.instance_id, task_id)
-                        return
-
                     execution_id = str(uuid.uuid4())
                     current_time = now_epoch_ms()
 
@@ -622,12 +431,9 @@ class SchedulerService:
                         if execution and execution.status == ExecutionStatus.FAILED:
                             execution_failed = True
                         elif execution and execution.status == ExecutionStatus.COMPLETED:
-                            # Phase 3.1: Reset failure count on success
                             if task:
                                 task.consecutive_failure_count = 0
                                 task.run_count = (task.run_count or 0) + 1
-                                if task.status == "error":
-                                    task.status = "active"
                                 session.commit()
                                 await self.notification_service.notify_execution_complete(
                                     execution=execution, task=task,
@@ -645,7 +451,7 @@ class SchedulerService:
                     # Success — exit the retry loop
                     break
 
-                # Execution failed
+                # Execution failed — track for observability (does not stop scheduling)
                 await self._track_failure(task_id)
 
                 if attempt < max_retries:
@@ -689,19 +495,12 @@ class SchedulerService:
                 await self._enforce_execution_history_bounds(task_id)
 
     async def _track_failure(self, task_id: str):
-        """Phase 3.1: Track consecutive failures and transition to error state."""
+        """Track consecutive failures for observability. Does not affect scheduling."""
         try:
             with self.session_factory() as session:
                 task = session.get(ScheduledTaskModel, task_id)
                 if task:
                     task.consecutive_failure_count = (task.consecutive_failure_count or 0) + 1
-                    if task.consecutive_failure_count >= 5:
-                        task.status = "error"
-                        log.warning(
-                            "[SchedulerService:%s] Task %s reached 5 consecutive failures, "
-                            "transitioning to error state",
-                            self.instance_id, task_id,
-                        )
                     session.commit()
         except Exception as e:
             log.error(
@@ -711,7 +510,7 @@ class SchedulerService:
             )
 
     async def _enforce_execution_history_bounds(self, task_id: str):
-        """Phase 3.4: Keep only the last 100 executions per task."""
+        """Keep only the last 100 executions per task."""
         try:
             from ...repository.scheduled_task_repository import ScheduledTaskRepository
             repo = ScheduledTaskRepository()
@@ -731,19 +530,29 @@ class SchedulerService:
             )
 
     def _render_template_variables(self, text: str, task: ScheduledTaskModel, execution_id: str) -> str:
-        """Phase 3.3: Render template variables in task message text.
+        """Render template variables in task message text.
 
         Uses simple str.replace() — no Jinja2 for security.
         """
         return self._render_template_variables_from_fields(
-            text, task.name, task.run_count, execution_id
+            text, task.name, task.run_count, execution_id, task.timezone
         )
 
     def _render_template_variables_from_fields(
         self, text: str, task_name: str, run_count: int, execution_id: str,
+        task_timezone: str = "UTC",
     ) -> str:
-        """Render template variables using extracted field values (no ORM object needed)."""
-        now = datetime.now(timezone.utc).isoformat()
+        """Render template variables using extracted field values (no ORM object needed).
+
+        {{schedule.run_date}} is rendered in the task's configured timezone,
+        not UTC, so the value matches the user's scheduling context.
+        """
+        try:
+            import pytz
+            tz = pytz.timezone(task_timezone)
+            now = datetime.now(tz).isoformat()
+        except Exception:
+            now = datetime.now(timezone.utc).isoformat()
         text = text.replace("{{schedule.name}}", task_name or "")
         text = text.replace("{{schedule.run_date}}", now)
         text = text.replace("{{schedule.run_count}}", str(run_count or 0))
@@ -777,21 +586,47 @@ class SchedulerService:
                 target_agent_name = task.target_agent_name
                 task_user_id = task.user_id
                 task_created_by = task.created_by
+                task_timezone = task.timezone
+
+            # --- Step 1b: Create a real session for this execution ---
+            # This makes scheduled task outputs visible in the chat session list
+            # and ensures artifacts flow through the standard artifact service.
+            user_id = task_user_id or task_created_by or "system-scheduler"
+            session_id = f"scheduled_{execution_id}"
+            try:
+                from ...repository.models import SessionModel
+                with self.session_factory() as sess:
+                    from ...shared import now_epoch_ms as _now_ms
+                    now = _now_ms()
+                    session_record = SessionModel(
+                        id=session_id,
+                        name=f"{task_name}",
+                        user_id=user_id,
+                        agent_id=target_agent_name,
+                        source="scheduler",
+                        created_time=now,
+                        updated_time=now,
+                    )
+                    sess.add(session_record)
+                    sess.commit()
+            except Exception as e:
+                log.warning(
+                    "[SchedulerService:%s] Failed to create session for execution %s: %s",
+                    self.instance_id, execution_id, e,
+                )
 
             # --- Step 2: Build A2A message (no session held) ---
-            # Phase 3.3: Render template variables in message parts
             message_parts = []
             for part in task_message_raw:
                 if part.get("type") == "text":
                     rendered_text = self._render_template_variables_from_fields(
-                        part["text"], task_name, task_run_count, execution_id
+                        part["text"], task_name, task_run_count, execution_id, task_timezone
                     )
                     message_parts.append(a2a.create_text_part(rendered_text))
                 elif part.get("type") == "file":
                     message_parts.append(a2a.create_file_part_from_uri(part["uri"]))
 
-            session_id = f"scheduler_{task_id}"
-            context_id = f"scheduled_{execution_id}"
+            context_id = session_id
             a2a_task_id = f"task-{uuid.uuid4().hex}"
 
             # Filter task_metadata to safe keys only
@@ -853,9 +688,7 @@ class SchedulerService:
                 self.instance_id, execution_id, a2a_task_id,
             )
 
-            # Wait for the result handler to signal completion so the caller
-            # sees the final execution status (COMPLETED / FAILED) rather than
-            # the stale RUNNING state.
+            # Wait for the result handler to signal completion
             if hasattr(self.result_handler, 'wait_for_completion'):
                 await self.result_handler.wait_for_completion(execution_id)
 
@@ -903,8 +736,8 @@ class SchedulerService:
             )
 
     async def is_leader(self) -> bool:
-        """Check if this instance is the current leader."""
-        return await self.leader_election.is_leader()
+        """Always True — single-instance architecture."""
+        return True
 
     async def handle_a2a_response(self, message_data: Dict[str, Any]):
         """Handle an A2A response message."""
@@ -916,20 +749,11 @@ class SchedulerService:
         if hasattr(self.result_handler, 'get_pending_count'):
             pending_count = self.result_handler.get_pending_count()
 
-        k8s_managed_count = sum(1 for t in self.active_tasks.values() if t.get("k8s_managed", False))
-
         return {
             "instance_id": self.instance_id,
             "namespace": self.namespace,
-            "is_leader": getattr(self.leader_election, '_is_leader', False),
             "active_tasks_count": len(self.active_tasks),
-            "k8s_managed_tasks_count": k8s_managed_count,
-            "apscheduler_managed_tasks_count": len(self.active_tasks) - k8s_managed_count,
             "running_executions_count": len(self.running_executions),
             "pending_results_count": pending_count,
             "scheduler_running": self.scheduler.running if self.scheduler else False,
-            "leader_info": self.leader_election.get_leader_info() if self.leader_election else None,
-            "use_stateless_collector": self.use_stateless_collector,
-            "k8s_enabled": self.k8s_enabled,
-            "k8s_manager_active": self.k8s_manager is not None,
         }

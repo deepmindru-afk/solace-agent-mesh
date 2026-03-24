@@ -2,9 +2,9 @@
 
 Tests cover:
 - Iterative retry loop in ``_execute_scheduled_task``
-- ``_on_lose_leadership`` clearing of running_executions
-- ``_monitor_task`` lifecycle (stored on start, cancelled on stop)
+- ``stop()`` lifecycle
 - Metadata filtering through ``_SAFE_METADATA_KEYS``
+- Template variable rendering
 """
 
 import asyncio
@@ -14,7 +14,6 @@ from unittest.mock import (
     AsyncMock,
     MagicMock,
     patch,
-    PropertyMock,
 )
 
 import pytest
@@ -35,7 +34,6 @@ def _make_mock_task(
     task_id="task-1",
     enabled=True,
     deleted_at=None,
-    status="active",
     max_retries=0,
     retry_delay_seconds=0,
     timeout_seconds=3600,
@@ -54,7 +52,6 @@ def _make_mock_task(
     task.name = name
     task.enabled = enabled
     task.deleted_at = deleted_at
-    task.status = status
     task.max_retries = max_retries
     task.retry_delay_seconds = retry_delay_seconds
     task.timeout_seconds = timeout_seconds
@@ -114,20 +111,12 @@ def _build_scheduler_service(**overrides):
     config = overrides.get("config", {})
 
     with patch(
-        "solace_agent_mesh.gateway.http_sse.services.scheduler.scheduler_service.LeaderElection"
-    ) as MockLeaderElection, patch(
         "solace_agent_mesh.gateway.http_sse.services.scheduler.scheduler_service.ResultHandler"
     ) as MockResultHandler, patch(
         "solace_agent_mesh.gateway.http_sse.services.scheduler.scheduler_service.NotificationService"
     ) as MockNotificationService, patch(
         "solace_agent_mesh.gateway.http_sse.services.scheduler.scheduler_service.AsyncIOScheduler"
     ) as MockScheduler:
-        mock_leader = MockLeaderElection.return_value
-        mock_leader.start = AsyncMock()
-        mock_leader.stop = AsyncMock()
-        mock_leader.is_leader = AsyncMock(return_value=True)
-        mock_leader._is_leader = True
-
         mock_result_handler = MockResultHandler.return_value
         mock_result_handler.register_execution = AsyncMock()
         mock_result_handler.wait_for_completion = AsyncMock()
@@ -155,7 +144,6 @@ def _build_scheduler_service(**overrides):
     return service, {
         "session": mock_session,
         "publish": mock_publish,
-        "leader_election": service.leader_election,
         "result_handler": service.result_handler,
         "notification_service": service.notification_service,
         "scheduler": service.scheduler,
@@ -201,36 +189,11 @@ class TestRetryLoop:
 
         task = _make_mock_task(max_retries=3, retry_delay_seconds=0, timeout_seconds=10)
 
-        submit_call_count = 0
-
         # Build a completed execution mock
         completed_execution = _make_mock_execution(status=ExecutionStatus.COMPLETED)
 
-        async def mock_submit(task_id, execution_id):
-            nonlocal submit_call_count
-            submit_call_count += 1
-            # Simulate successful completion
-
-        def mock_session_get(model_or_id, id_val=None):
-            if id_val is None:
-                # Called as session.get(Model, id)
-                return task
-            # Called with two args
-            if isinstance(model_or_id, type) and model_or_id == ScheduledTaskExecutionModel:
-                return completed_execution
-            return task
-
-        mocks["session"].get.side_effect = lambda model, id_val=None: (
-            completed_execution if model == ScheduledTaskExecutionModel or (isinstance(model, str) and model != "task-1") else task
-        )
-
-        # Simplify: just make session.get always return the right thing
-        call_count = [0]
-
         def smart_get(model_cls, obj_id=None):
             if obj_id is None:
-                obj_id = model_cls
-                # single arg call
                 return task
             if model_cls == ScheduledTaskExecutionModel:
                 return completed_execution
@@ -280,65 +243,25 @@ class TestRetryLoop:
         service._submit_task_to_agent_mesh.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_execution_when_task_in_error_state(self):
-        """Tasks in error state are skipped."""
+    async def test_tasks_keep_running_despite_failures(self):
+        """Tasks do NOT auto-stop after consecutive failures (simplified status machine)."""
         service, mocks = _build_scheduler_service()
 
-        # First call returns task for config read, second returns error-state task
-        task_config = _make_mock_task(status="active")
-        task_error = _make_mock_task(status="error")
-
-        call_count = [0]
-
-        def get_side_effect(model, obj_id=None):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return task_config  # config read
-            return task_error  # execution check
-
-        mocks["session"].get.side_effect = get_side_effect
+        # Task with many consecutive failures — should still execute
+        task = _make_mock_task(
+            consecutive_failure_count=100,
+            max_retries=0,
+            retry_delay_seconds=0,
+            timeout_seconds=10,
+        )
+        mocks["session"].get.return_value = task
 
         service._submit_task_to_agent_mesh = AsyncMock()
 
         await service._execute_scheduled_task("task-1")
 
-        service._submit_task_to_agent_mesh.assert_not_called()
-
-
-# ===========================================================================
-# _on_lose_leadership
-# ===========================================================================
-
-class TestOnLoseLeadership:
-    """Tests for ``_on_lose_leadership`` clearing running_executions."""
-
-    @pytest.mark.asyncio
-    async def test_clears_running_executions(self):
-        """Losing leadership clears the running_executions dict."""
-        service, mocks = _build_scheduler_service()
-
-        # Simulate some running executions
-        service.running_executions = {
-            "exec-1": MagicMock(),
-            "exec-2": MagicMock(),
-        }
-
-        # Mock _unload_all_tasks to avoid side effects
-        service._unload_all_tasks = AsyncMock()
-
-        await service._on_lose_leadership()
-
-        assert len(service.running_executions) == 0
-
-    @pytest.mark.asyncio
-    async def test_calls_unload_all_tasks(self):
-        """Losing leadership also unloads all scheduled tasks."""
-        service, mocks = _build_scheduler_service()
-        service._unload_all_tasks = AsyncMock()
-
-        await service._on_lose_leadership()
-
-        service._unload_all_tasks.assert_awaited_once()
+        # Task should still be submitted despite 100 consecutive failures
+        service._submit_task_to_agent_mesh.assert_called_once()
 
 
 # ===========================================================================
@@ -349,20 +272,17 @@ class TestStopLifecycle:
     """Tests for the ``stop()`` method lifecycle."""
 
     @pytest.mark.asyncio
-    async def test_stop_cancels_monitor_task(self):
-        """``stop()`` cancels the ``_monitor_task`` if it's running."""
+    async def test_stop_cancels_stale_cleanup_task(self):
+        """``stop()`` cancels the stale cleanup task if it's running."""
         service, mocks = _build_scheduler_service()
 
-        # Create a real asyncio task that we can check
         async def long_running():
             await asyncio.sleep(3600)
 
-        service._monitor_task = asyncio.create_task(long_running())
         service._stale_cleanup_task = asyncio.create_task(long_running())
 
         await service.stop()
 
-        assert service._monitor_task.cancelled() or service._monitor_task.done()
         assert service._stale_cleanup_task.cancelled() or service._stale_cleanup_task.done()
 
     @pytest.mark.asyncio
@@ -375,7 +295,6 @@ class TestStopLifecycle:
 
         exec_task = asyncio.create_task(long_running())
         service.running_executions = {"exec-1": exec_task}
-        service._monitor_task = None
         service._stale_cleanup_task = None
 
         await service.stop()
@@ -390,30 +309,12 @@ class TestStopLifecycle:
         assert exec_task.cancelled() or exec_task.done()
 
     @pytest.mark.asyncio
-    async def test_start_creates_monitor_task(self):
-        """``start()`` creates the ``_monitor_task``."""
+    async def test_is_leader_always_returns_true(self):
+        """Single-instance: is_leader() always returns True."""
         service, mocks = _build_scheduler_service()
 
-        assert service._monitor_task is None
-
-        await service.start()
-
-        assert service._monitor_task is not None
-        assert not service._monitor_task.done()
-
-        # Cleanup
-        service._monitor_task.cancel()
-        if service._stale_cleanup_task:
-            service._stale_cleanup_task.cancel()
-        try:
-            await service._monitor_task
-        except asyncio.CancelledError:
-            pass
-        try:
-            if service._stale_cleanup_task:
-                await service._stale_cleanup_task
-        except asyncio.CancelledError:
-            pass
+        result = await service.is_leader()
+        assert result is True
 
 
 # ===========================================================================

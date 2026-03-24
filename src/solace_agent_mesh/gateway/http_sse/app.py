@@ -355,32 +355,6 @@ class WebUIBackendApp(BaseGatewayApp):
                     "default": None,
                     "description": "Unique instance ID for this scheduler (auto-generated if not provided).",
                 },
-                "leader_election": {
-                    "type": "dict",
-                    "required": False,
-                    "default": {},
-                    "description": "Leader election configuration for distributed scheduling.",
-                    "dict_schema": {
-                        "enabled": {
-                            "type": "boolean",
-                            "required": False,
-                            "default": True,
-                            "description": "Enable leader election (required for multi-instance deployments).",
-                        },
-                        "heartbeat_interval_seconds": {
-                            "type": "integer",
-                            "required": False,
-                            "default": 30,
-                            "description": "How often to send heartbeats to maintain leadership.",
-                        },
-                        "lease_duration_seconds": {
-                            "type": "integer",
-                            "required": False,
-                            "default": 60,
-                            "description": "How long a leadership lease is valid.",
-                        },
-                    },
-                },
                 "default_timeout_seconds": {
                     "type": "integer",
                     "required": False,

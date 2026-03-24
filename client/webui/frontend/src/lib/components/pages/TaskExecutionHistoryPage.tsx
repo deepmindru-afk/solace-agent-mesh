@@ -4,12 +4,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 // useRef is used for hasInitializedRef and hasActiveRef (stable polling interval)
-import { MoreHorizontal, FileText, Download, ArrowLeft, ChevronRight, ChevronLeft } from "lucide-react";
+import { MoreHorizontal, FileText, Download, ArrowLeft, ChevronRight, ChevronLeft, MessageCircle } from "lucide-react";
 import type { ScheduledTask, TaskExecution, ArtifactInfo } from "@/lib/types/scheduled-tasks";
 import { transformApiExecution } from "@/lib/types/scheduled-tasks";
 import { Header } from "@/lib/components/header";
 import { Button, Label } from "@/lib/components/ui";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/lib/components/ui";
+import { useNavigate } from "react-router-dom";
 import { useChatContext } from "@/lib/hooks";
 import { api } from "@/lib/api/client";
 import { ContentRenderer } from "@/lib/components/chat/preview/ContentRenderer";
@@ -24,7 +25,8 @@ interface TaskExecutionHistoryPageProps {
 }
 
 export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> = ({ task, onBack, onEdit, onDelete }) => {
-    const { addNotification } = useChatContext();
+    const navigate = useNavigate();
+    const { addNotification, handleSwitchSession } = useChatContext();
     const [executions, setExecutions] = useState<TaskExecution[]>([]);
     const [selectedExecution, setSelectedExecution] = useState<TaskExecution | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -321,7 +323,20 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                 {/* Header */}
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-lg font-semibold">Execution Details</h2>
-                                    {getStatusBadge(selectedExecution.status)}
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={async () => {
+                                                await handleSwitchSession(`scheduled_${selectedExecution.id}`);
+                                                navigate("/chat");
+                                            }}
+                                        >
+                                            <MessageCircle className="mr-1 h-4 w-4" />
+                                            Go to Chat
+                                        </Button>
+                                        {getStatusBadge(selectedExecution.status)}
+                                    </div>
                                 </div>
 
                                 {/* Execution Metadata */}

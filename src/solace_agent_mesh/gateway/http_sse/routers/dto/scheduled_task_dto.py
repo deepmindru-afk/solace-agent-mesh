@@ -150,7 +150,6 @@ class ScheduledTaskResponse(BaseModel):
     task_metadata: Optional[Dict[str, Any]]
 
     enabled: bool
-    status: str
     max_retries: int
     retry_delay_seconds: int
     timeout_seconds: int
@@ -201,7 +200,7 @@ class ExecutionResponse(BaseModel):
     error_message: Optional[str]
     retry_count: int
 
-    artifacts: Optional[List[Union[str, ArtifactInfo]]]
+    artifacts: Optional[List[Union[str, Dict[str, Any], ArtifactInfo]]]
     notifications_sent: Optional[List[Dict[str, Any]]]
 
     class Config:
@@ -243,11 +242,9 @@ class SchedulerStatusResponse(BaseModel):
     """Response model for scheduler status."""
     instance_id: str
     namespace: str
-    is_leader: bool
     active_tasks_count: int
     running_executions_count: int
     scheduler_running: bool
-    leader_info: Optional[Dict[str, Any]] = None
     pending_results_count: Optional[int] = None
 
 

@@ -4,7 +4,9 @@ Processes A2A responses and updates execution records.
 """
 
 import asyncio
+import json
 import logging
+import uuid
 from typing import Any, Callable, Dict, Optional
 
 from a2a.types import Task, JSONRPCResponse, JSONRPCError
@@ -113,7 +115,8 @@ class ResultHandler:
         try:
             result_summary = {}
             artifacts = []
-            messages = []
+            messages = []  # Truncated for result_summary storage
+            full_messages = []  # Full text for chat bubble display
 
             if isinstance(result, Task):
                 if result.status and result.status.message:
@@ -121,6 +124,7 @@ class ResultHandler:
                     if agent_text:
                         result_summary["agent_response"] = agent_text[:1000]
                         messages.append({"role": "agent", "text": agent_text[:1000]})
+                        full_messages.append({"role": "agent", "text": agent_text})
 
                     file_parts = a2a.get_file_parts_from_message(result.status.message)
                     for file_part in file_parts:
@@ -135,6 +139,7 @@ class ResultHandler:
                         role = getattr(msg, 'role', 'unknown')
                         if text:
                             messages.append({"role": str(role), "text": text[:1000]})
+                            full_messages.append({"role": str(role), "text": text})
                         file_parts = a2a.get_file_parts_from_message(msg)
                         for file_part in file_parts:
                             uri = a2a.get_uri_from_file_part(file_part)
@@ -148,18 +153,57 @@ class ResultHandler:
                 if task_state:
                     result_summary["task_status"] = str(task_state)
 
+                # Extract artifacts from task metadata (produced_artifacts manifest)
+                # Agents attach artifact manifests to metadata, not bundled in the response
+                session_id = self.execution_sessions.get(execution_id)
+                task_metadata = a2a.get_task_metadata(result)
+                if task_metadata and isinstance(task_metadata, dict):
+                    artifact_list = task_metadata.get("produced_artifacts") or task_metadata.get("artifact_manifest", [])
+                    if isinstance(artifact_list, list):
+                        for artifact_info in artifact_list:
+                            if isinstance(artifact_info, dict):
+                                art_name = artifact_info.get("name") or artifact_info.get("filename")
+                                if art_name and not art_name.startswith("web_content_"):
+                                    art_uri = f"artifact://{session_id}/{art_name}" if session_id else f"artifact://unknown/{art_name}"
+                                    artifact_obj = {
+                                        "kind": "artifact",
+                                        "status": "completed",
+                                        "name": art_name,
+                                        "file": {
+                                            "name": art_name,
+                                            "mime_type": artifact_info.get("mime_type"),
+                                            "uri": art_uri,
+                                        },
+                                    }
+                                    if not any(
+                                        (a.get("name") if isinstance(a, dict) else None) == art_name
+                                        for a in artifacts
+                                    ):
+                                        artifacts.append(artifact_obj)
+
+                # Also check task_artifacts (bundled artifacts, if any)
                 task_artifacts = a2a.get_task_artifacts(result)
                 if task_artifacts:
-                    session_id = self.execution_sessions.get(execution_id)
                     for artifact in task_artifacts:
                         artifact_id = a2a.get_artifact_id(artifact)
                         if artifact_id:
                             if session_id:
-                                artifact_uri = f"/api/v1/artifacts/scheduled/{session_id}/{artifact_id}"
+                                artifact_uri = f"artifact://{session_id}/{artifact_id}"
                             else:
                                 artifact_uri = f"artifact://{artifact_id}"
-                            artifact_obj = {"name": artifact_id, "uri": artifact_uri}
-                            if not any(a.get("name") == artifact_id for a in artifacts if isinstance(a, dict)):
+                            artifact_obj = {
+                                "kind": "artifact",
+                                "status": "completed",
+                                "name": artifact_id,
+                                "file": {
+                                    "name": artifact_id,
+                                    "uri": artifact_uri,
+                                },
+                            }
+                            if not any(
+                                (a.get("name") if isinstance(a, dict) else None) == artifact_id
+                                for a in artifacts
+                            ):
                                 artifacts.append(artifact_obj)
 
             repo = ScheduledTaskRepository()
@@ -171,6 +215,12 @@ class ResultHandler:
                     "artifacts": artifacts if artifacts else None,
                 }
                 repo.update_execution(session, execution_id, update_data)
+
+                # Create ChatTask so content appears in the chat session view
+                execution = repo.find_execution_by_id(session, execution_id)
+                if execution:
+                    self._save_chat_task(session, execution, full_messages, artifacts=artifacts)
+
                 session.commit()
 
             # Clean up session tracking and signal completion
@@ -214,6 +264,13 @@ class ResultHandler:
                     "result_summary": {"error_code": error.code},
                 }
                 repo.update_execution(session, execution_id, update_data)
+
+                # Create ChatTask so error appears in the chat session view
+                execution = repo.find_execution_by_id(session, execution_id)
+                if execution:
+                    error_messages = [{"role": "agent", "text": _sanitize_error_message(error.message)}]
+                    self._save_chat_task(session, execution, error_messages, is_error=True)
+
                 session.commit()
 
             # Clean up session tracking and signal completion
@@ -235,6 +292,121 @@ class ResultHandler:
                 "%s Error handling error for execution %s: %s",
                 self.log_prefix, execution_id, e,
                 exc_info=True,
+            )
+
+    def _save_chat_task(
+        self,
+        db_session: DBSession,
+        execution: ScheduledTaskExecutionModel,
+        messages: list,
+        artifacts: list = None,
+        is_error: bool = False,
+    ):
+        """Create a ChatTask record so scheduled execution content appears in the chat UI.
+
+        The chat view loads messages from the chat_tasks table. Without this,
+        scheduled sessions appear in the list but show no content.
+        """
+        try:
+            from ...repository.models import ChatTaskModel
+
+            session_id = f"scheduled_{execution.id}"
+
+            # Look up the scheduled task to get the user prompt
+            task = execution.scheduled_task
+            user_message = ""
+            if task and task.task_message:
+                for part in task.task_message:
+                    if part.get("type") == "text":
+                        user_message = part.get("text", "")
+                        break
+
+            user_id = task.created_by if task else "system-scheduler"
+
+            # Build message bubbles in the format the frontend expects
+            bubbles = []
+
+            # User message bubble (the scheduled prompt)
+            if user_message:
+                bubbles.append({
+                    "id": str(uuid.uuid4()),
+                    "type": "user",
+                    "text": user_message,
+                })
+
+            # Agent response bubbles with artifact parts (same format as regular chat)
+            for msg in messages:
+                role = msg.get("role", "agent")
+                text = msg.get("text", "")
+                if role == "agent" and text:
+                    # Build parts array: text + artifact parts
+                    parts = [{"kind": "text", "text": text}]
+
+                    # Append artifact markers to text and artifact parts
+                    # Same approach as TaskLoggerService and ChatProvider serialization
+                    artifact_text = ""
+                    if artifacts:
+                        for art in artifacts:
+                            if isinstance(art, dict) and art.get("kind") == "artifact":
+                                # Already in the right format from metadata extraction
+                                art_name = art.get("name", "")
+                                if art_name:
+                                    artifact_text += f"\n\u00abartifact_return:{art_name}\u00bb"
+                                    parts.append(art)
+                            elif isinstance(art, dict):
+                                art_name = art.get("name", "")
+                                art_uri = art.get("uri", "")
+                                if art_name:
+                                    artifact_text += f"\n\u00abartifact_return:{art_name}\u00bb"
+                                    parts.append({
+                                        "kind": "artifact",
+                                        "status": "completed",
+                                        "name": art_name,
+                                        "file": {
+                                            "name": art_name,
+                                            "uri": art_uri,
+                                        },
+                                    })
+
+                    bubbles.append({
+                        "id": str(uuid.uuid4()),
+                        "type": "agent",
+                        "text": text + artifact_text,
+                        "parts": parts,
+                        "isError": is_error,
+                    })
+
+            if not bubbles:
+                return
+
+            now = now_epoch_ms()
+            task_metadata = json.dumps({
+                "schema_version": 1,
+                "status": "error" if is_error else "completed",
+                "agent_name": task.target_agent_name if task else None,
+                "source": "scheduler",
+            })
+
+            chat_task = ChatTaskModel(
+                id=execution.a2a_task_id or str(uuid.uuid4()),
+                session_id=session_id,
+                user_id=user_id,
+                user_message=user_message,
+                message_bubbles=json.dumps(bubbles),
+                task_metadata=task_metadata,
+                created_time=now,
+                updated_time=now,
+            )
+            db_session.add(chat_task)
+            log.info(
+                "%s Created ChatTask for execution %s in session %s",
+                self.log_prefix, execution.id, session_id,
+            )
+
+        except Exception as e:
+            log.warning(
+                "%s Failed to create ChatTask for execution %s: %s",
+                self.log_prefix, execution.id, e,
             )
 
     def _is_scheduler_response(self, topic: str) -> bool:

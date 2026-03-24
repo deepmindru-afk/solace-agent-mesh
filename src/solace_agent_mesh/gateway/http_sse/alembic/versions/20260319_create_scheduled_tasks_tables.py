@@ -1,4 +1,4 @@
-"""Create scheduled tasks tables
+"""Create scheduled tasks tables and add source column to sessions
 
 Revision ID: 20260319_scheduled_tasks
 Revises: 20260320_project_user_pins
@@ -7,7 +7,7 @@ Create Date: 2026-03-19 00:00:00.000000
 Creates tables for the scheduled tasks feature:
 - scheduled_tasks: task definitions with scheduling config
 - scheduled_task_executions: execution history records
-- scheduler_locks: distributed leader election lock
+- Adds 'source' column to sessions table (chat/scheduler filtering)
 """
 from typing import Sequence, Union
 from alembic import op
@@ -37,6 +37,14 @@ def _index_exists(table_name: str, index_name: str) -> bool:
     return any(idx["name"] == index_name for idx in existing_indexes)
 
 
+def _column_exists(table_name: str, column_name: str) -> bool:
+    """Check if a column already exists in a table."""
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    columns = [col["name"] for col in inspector.get_columns(table_name)]
+    return column_name in columns
+
+
 def upgrade() -> None:
     dialect = op.get_bind().dialect.name
 
@@ -62,7 +70,6 @@ def upgrade() -> None:
             sa.Column("task_message", sa.JSON(), nullable=False),
             sa.Column("task_metadata", sa.JSON(), nullable=True),
             sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-            sa.Column("status", sa.String(), nullable=False, server_default="active"),
             sa.Column("max_retries", sa.Integer(), nullable=False, server_default=sa.text("0")),
             sa.Column("retry_delay_seconds", sa.Integer(), nullable=False, server_default=sa.text("60")),
             sa.Column("timeout_seconds", sa.Integer(), nullable=False, server_default=sa.text("3600")),
@@ -142,26 +149,19 @@ def upgrade() -> None:
         op.create_index("ix_scheduled_task_executions_a2a_task_id", "scheduled_task_executions", ["a2a_task_id"])
         op.create_index("ix_scheduled_task_executions_scheduled_for", "scheduled_task_executions", ["scheduled_for"])
 
-    # Create scheduler_locks table
-    if not _table_exists("scheduler_locks"):
-        op.create_table(
-            "scheduler_locks",
-            sa.Column("id", sa.Integer(), nullable=False),
-            sa.Column("leader_id", sa.String(), nullable=False),
-            sa.Column("leader_namespace", sa.String(), nullable=False),
-            sa.Column("acquired_at", sa.BigInteger(), nullable=False),
-            sa.Column("expires_at", sa.BigInteger(), nullable=False),
-            sa.Column("heartbeat_at", sa.BigInteger(), nullable=False),
-            sa.PrimaryKeyConstraint("id"),
+    # Add source column to sessions table for chat/scheduler filtering
+    if _table_exists("sessions") and not _column_exists("sessions", "source"):
+        op.add_column(
+            "sessions",
+            sa.Column("source", sa.String(), nullable=True, server_default="chat"),
         )
-
-        op.create_index("ix_scheduler_locks_expires_at", "scheduler_locks", ["expires_at"])
 
 
 def downgrade() -> None:
-    # Drop in reverse order
-    if _table_exists("scheduler_locks"):
-        op.drop_table("scheduler_locks")
+    # Drop source column from sessions
+    if _table_exists("sessions") and _column_exists("sessions", "source"):
+        op.drop_column("sessions", "source")
+    # Drop scheduled tasks tables in reverse order
     if _table_exists("scheduled_task_executions"):
         op.drop_table("scheduled_task_executions")
     if _table_exists("scheduled_tasks"):

@@ -468,7 +468,6 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
                                                     .map(agent => (
                                                         <SelectItem key={agent.name} value={agent.name}>
                                                             {agent.displayName || agent.name}
-                                                            {agent.description && <span className="text-muted-foreground ml-2 text-xs">- {agent.description}</span>}
                                                         </SelectItem>
                                                     ))}
                                             </SelectContent>
