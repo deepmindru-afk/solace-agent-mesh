@@ -514,3 +514,476 @@ class TestTemplateRendering:
         result = service._render_template_variables_from_fields(text, None, 0, "exec-1")
         assert "Task: " in result
         assert "None" not in result
+
+
+# ===========================================================================
+# _parse_interval
+# ===========================================================================
+
+class TestParseInterval:
+    """Tests for ``_parse_interval`` string-to-seconds conversion."""
+
+    def test_parse_seconds(self):
+        service, _ = _build_scheduler_service()
+        assert service._parse_interval("30s") == 30
+
+    def test_parse_minutes(self):
+        service, _ = _build_scheduler_service()
+        assert service._parse_interval("5m") == 300
+
+    def test_parse_hours(self):
+        service, _ = _build_scheduler_service()
+        assert service._parse_interval("2h") == 7200
+
+    def test_parse_days(self):
+        service, _ = _build_scheduler_service()
+        assert service._parse_interval("1d") == 86400
+
+    def test_parse_bare_integer(self):
+        service, _ = _build_scheduler_service()
+        assert service._parse_interval("120") == 120
+
+    def test_parse_strips_whitespace(self):
+        service, _ = _build_scheduler_service()
+        assert service._parse_interval("  10m  ") == 600
+
+    def test_parse_case_insensitive(self):
+        service, _ = _build_scheduler_service()
+        # Input is lowered internally, so uppercase should also work
+        assert service._parse_interval("3H") == 10800
+
+
+# ===========================================================================
+# _create_trigger
+# ===========================================================================
+
+class TestCreateTrigger:
+    """Tests for ``_create_trigger`` APScheduler trigger factory."""
+
+    def test_cron_trigger(self):
+        from apscheduler.triggers.cron import CronTrigger
+
+        service, _ = _build_scheduler_service()
+        task = _make_mock_task()
+        task.schedule_type = ScheduleType.CRON
+        task.schedule_expression = "*/5 * * * *"
+        task.timezone = "UTC"
+
+        trigger = service._create_trigger(task)
+        assert isinstance(trigger, CronTrigger)
+
+    def test_interval_trigger(self):
+        from apscheduler.triggers.interval import IntervalTrigger
+
+        service, _ = _build_scheduler_service()
+        task = _make_mock_task()
+        task.schedule_type = ScheduleType.INTERVAL
+        task.schedule_expression = "30m"
+        task.timezone = "UTC"
+
+        trigger = service._create_trigger(task)
+        assert isinstance(trigger, IntervalTrigger)
+
+    def test_one_time_trigger(self):
+        from apscheduler.triggers.date import DateTrigger
+
+        service, _ = _build_scheduler_service()
+        task = _make_mock_task()
+        task.schedule_type = ScheduleType.ONE_TIME
+        task.schedule_expression = "2099-01-01T00:00:00"
+        task.timezone = "UTC"
+
+        trigger = service._create_trigger(task)
+        assert isinstance(trigger, DateTrigger)
+
+    def test_unsupported_schedule_type_raises(self):
+        service, _ = _build_scheduler_service()
+        task = _make_mock_task()
+        task.schedule_type = "WEEKLY"
+        task.schedule_expression = "something"
+        task.timezone = "UTC"
+
+        with pytest.raises(ValueError, match="Unsupported schedule type"):
+            service._create_trigger(task)
+
+    def test_invalid_cron_expression_raises(self):
+        service, _ = _build_scheduler_service()
+        task = _make_mock_task()
+        task.schedule_type = ScheduleType.CRON
+        task.schedule_expression = "not-a-cron"
+        task.timezone = "UTC"
+
+        with pytest.raises(ValueError, match="Invalid cron expression"):
+            service._create_trigger(task)
+
+
+# ===========================================================================
+# _schedule_task
+# ===========================================================================
+
+class TestScheduleTask:
+    """Tests for ``_schedule_task`` adding a job to APScheduler."""
+
+    @pytest.mark.asyncio
+    async def test_schedule_task_adds_job(self):
+        """Scheduling a task should add a job to the APScheduler."""
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task()
+
+        mock_job = MagicMock()
+        mock_job.next_run_time = None
+        mocks["scheduler"].add_job.return_value = mock_job
+
+        await service._schedule_task(task)
+
+        mocks["scheduler"].add_job.assert_called_once()
+        assert task.id in service.active_tasks
+
+    @pytest.mark.asyncio
+    async def test_schedule_task_updates_next_run_at(self):
+        """When the job has a next_run_time, next_run_at should be updated in the DB."""
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task()
+
+        from datetime import datetime, timezone as tz
+        mock_job = MagicMock()
+        mock_job.next_run_time = datetime(2099, 1, 1, tzinfo=tz.utc)
+        mocks["scheduler"].add_job.return_value = mock_job
+
+        db_task = MagicMock()
+        mocks["session"].get.return_value = db_task
+
+        await service._schedule_task(task)
+
+        assert db_task.next_run_at is not None
+        mocks["session"].commit.assert_called()
+
+
+# ===========================================================================
+# _unschedule_task
+# ===========================================================================
+
+class TestUnscheduleTask:
+    """Tests for ``_unschedule_task`` removing a job from APScheduler."""
+
+    @pytest.mark.asyncio
+    async def test_unschedule_removes_job_and_active_tasks_entry(self):
+        service, mocks = _build_scheduler_service()
+
+        service.active_tasks["task-1"] = {"job": MagicMock(), "task_name": "t", "schedule_type": "cron"}
+
+        await service._unschedule_task("task-1")
+
+        mocks["scheduler"].remove_job.assert_called_once_with("scheduled_task_task-1")
+        assert "task-1" not in service.active_tasks
+
+    @pytest.mark.asyncio
+    async def test_unschedule_nonexistent_task_is_noop(self):
+        """Unscheduling a task not in active_tasks should not raise."""
+        service, mocks = _build_scheduler_service()
+
+        await service._unschedule_task("nonexistent")
+
+        mocks["scheduler"].remove_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unschedule_cleans_up_on_remove_job_error(self):
+        """If remove_job raises, the active_tasks entry should still be cleaned up."""
+        service, mocks = _build_scheduler_service()
+
+        service.active_tasks["task-1"] = {"job": MagicMock()}
+        mocks["scheduler"].remove_job.side_effect = Exception("job not found")
+
+        await service._unschedule_task("task-1")
+
+        assert "task-1" not in service.active_tasks
+
+
+# ===========================================================================
+# Max concurrent executions
+# ===========================================================================
+
+class TestMaxConcurrentExecutions:
+    """Tests for max concurrent execution gating."""
+
+    @pytest.mark.asyncio
+    async def test_execution_skipped_when_max_concurrent_reached(self):
+        """When running_executions >= max_concurrent_executions, the task is SKIPPED."""
+        service, mocks = _build_scheduler_service(config={"max_concurrent_executions": 1})
+
+        task = _make_mock_task(max_retries=0, timeout_seconds=10)
+        mocks["session"].get.return_value = task
+
+        # Simulate one execution already running
+        service.running_executions["existing-exec"] = MagicMock()
+
+        service._submit_task_to_agent_mesh = AsyncMock()
+
+        await service._execute_scheduled_task("task-1")
+
+        # The task should NOT have been submitted
+        service._submit_task_to_agent_mesh.assert_not_called()
+        # A SKIPPED execution should have been added to the session
+        mocks["session"].add.assert_called()
+        added_obj = mocks["session"].add.call_args[0][0]
+        assert added_obj.status == ExecutionStatus.SKIPPED
+
+
+# ===========================================================================
+# Execution with disabled / deleted task
+# ===========================================================================
+
+class TestExecutionDisabledTask:
+    """Tests that disabled or deleted tasks are skipped during execution."""
+
+    @pytest.mark.asyncio
+    async def test_disabled_task_skipped(self):
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task(enabled=False)
+
+        # First call returns the task (for snapshot), second call returns disabled task
+        call_count = 0
+        def session_get(model_cls, obj_id=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return task  # initial read
+            return task  # second read sees disabled
+
+        mocks["session"].get.side_effect = session_get
+
+        service._submit_task_to_agent_mesh = AsyncMock()
+
+        await service._execute_scheduled_task("task-1")
+
+        service._submit_task_to_agent_mesh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deleted_task_skipped(self):
+        service, mocks = _build_scheduler_service()
+
+        from datetime import datetime, timezone as tz
+        task = _make_mock_task(deleted_at=datetime.now(tz.utc))
+
+        call_count = 0
+        def session_get(model_cls, obj_id=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return task
+            return task
+
+        mocks["session"].get.side_effect = session_get
+
+        service._submit_task_to_agent_mesh = AsyncMock()
+
+        await service._execute_scheduled_task("task-1")
+
+        service._submit_task_to_agent_mesh.assert_not_called()
+
+
+# ===========================================================================
+# Execution timeout
+# ===========================================================================
+
+class TestExecutionTimeout:
+    """Tests for timeout handling in ``_execute_scheduled_task``."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_marks_execution_as_timeout(self):
+        """When the execution times out, ``_handle_execution_timeout`` is called."""
+        service, mocks = _build_scheduler_service()
+
+        # Use timeout_seconds=1 (not 0, since 0 is falsy and triggers default).
+        task = _make_mock_task(max_retries=0, timeout_seconds=1)
+
+        # After submit, the code does session.get(ScheduledTaskExecutionModel, execution_id)
+        # and checks execution.status — so we need a proper mock with status attribute.
+        post_submit_execution = _make_mock_execution(status=ExecutionStatus.RUNNING)
+
+        call_count = {"get": 0}
+
+        def smart_get(model_cls, obj_id=None):
+            call_count["get"] += 1
+            if model_cls == ScheduledTaskExecutionModel:
+                return post_submit_execution
+            return task
+
+        mocks["session"].get.side_effect = smart_get
+
+        async def slow_submit(task_id, execution_id, task_snapshot):
+            await asyncio.sleep(60)
+
+        service._submit_task_to_agent_mesh = slow_submit
+
+        timeout_called_with = []
+
+        async def capture_timeout(execution_id):
+            timeout_called_with.append(execution_id)
+
+        service._handle_execution_timeout = capture_timeout
+        service._track_failure = AsyncMock()
+        service._enforce_execution_history_bounds = AsyncMock()
+
+        await service._execute_scheduled_task("task-1")
+
+        assert len(timeout_called_with) == 1
+
+
+# ===========================================================================
+# _track_failure
+# ===========================================================================
+
+class TestTrackFailure:
+    """Tests for ``_track_failure`` consecutive failure tracking."""
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failure_count_increments(self):
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task(consecutive_failure_count=3)
+        mocks["session"].get.return_value = task
+
+        await service._track_failure("task-1")
+
+        assert task.consecutive_failure_count == 4
+        mocks["session"].commit.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_failure_count_starts_from_none(self):
+        """When consecutive_failure_count is None, it should be treated as 0."""
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task(consecutive_failure_count=0)
+        task.consecutive_failure_count = None
+        mocks["session"].get.return_value = task
+
+        await service._track_failure("task-1")
+
+        assert task.consecutive_failure_count == 1
+
+    @pytest.mark.asyncio
+    async def test_success_resets_failure_count(self):
+        """On successful execution, consecutive_failure_count is reset to 0."""
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task(
+            max_retries=0, retry_delay_seconds=0, timeout_seconds=10,
+            consecutive_failure_count=5,
+        )
+
+        completed_execution = _make_mock_execution(status=ExecutionStatus.COMPLETED)
+
+        def smart_get(model_cls, obj_id=None):
+            if model_cls == ScheduledTaskExecutionModel:
+                return completed_execution
+            return task
+
+        mocks["session"].get.side_effect = smart_get
+
+        service._submit_task_to_agent_mesh = AsyncMock()
+
+        await service._execute_scheduled_task("task-1")
+
+        assert task.consecutive_failure_count == 0
+
+
+# ===========================================================================
+# _enforce_execution_history_bounds
+# ===========================================================================
+
+class TestEnforceExecutionHistoryBounds:
+    """Tests for ``_enforce_execution_history_bounds`` pruning old executions."""
+
+    @pytest.mark.asyncio
+    async def test_prunes_oldest_executions(self):
+        service, mocks = _build_scheduler_service()
+
+        mock_repo = MagicMock()
+        mock_repo.delete_oldest_executions.return_value = 5
+
+        with patch(
+            "solace_agent_mesh.gateway.http_sse.repository.scheduled_task_repository.ScheduledTaskRepository",
+            return_value=mock_repo,
+        ):
+            await service._enforce_execution_history_bounds("task-1")
+
+        mock_repo.delete_oldest_executions.assert_called_once_with(
+            mocks["session"], "task-1", keep_count=100
+        )
+        mocks["session"].commit.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_no_commit_when_nothing_pruned(self):
+        service, mocks = _build_scheduler_service()
+
+        mock_repo = MagicMock()
+        mock_repo.delete_oldest_executions.return_value = 0
+
+        with patch(
+            "solace_agent_mesh.gateway.http_sse.repository.scheduled_task_repository.ScheduledTaskRepository",
+            return_value=mock_repo,
+        ):
+            await service._enforce_execution_history_bounds("task-1")
+
+        mock_repo.delete_oldest_executions.assert_called_once()
+        # commit should not be called when deleted == 0
+        mocks["session"].commit.assert_not_called()
+
+
+# ===========================================================================
+# get_status
+# ===========================================================================
+
+class TestGetStatus:
+    """Tests for ``get_status`` status reporting."""
+
+    def test_returns_correct_counts(self):
+        service, mocks = _build_scheduler_service()
+
+        service.active_tasks = {"t1": {}, "t2": {}}
+        service.running_executions = {"e1": MagicMock()}
+
+        mocks["result_handler"].get_pending_count = MagicMock(return_value=3)
+
+        status = service.get_status()
+
+        assert status["instance_id"] == "inst-1"
+        assert status["namespace"] == "ns1"
+        assert status["active_tasks_count"] == 2
+        assert status["running_executions_count"] == 1
+        assert status["pending_results_count"] == 3
+        assert status["scheduler_running"] is True
+
+    def test_pending_count_zero_without_method(self):
+        """If result_handler lacks get_pending_count, pending_results_count is 0."""
+        service, mocks = _build_scheduler_service()
+
+        # Remove get_pending_count to simulate missing attribute
+        if hasattr(service.result_handler, "get_pending_count"):
+            del service.result_handler.get_pending_count
+
+        status = service.get_status()
+        assert status["pending_results_count"] == 0
+
+
+# ===========================================================================
+# handle_a2a_response
+# ===========================================================================
+
+class TestHandleA2AResponse:
+    """Tests for ``handle_a2a_response`` delegation."""
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_result_handler(self):
+        service, mocks = _build_scheduler_service()
+
+        mocks["result_handler"].handle_response = AsyncMock()
+
+        message_data = {"taskId": "t-123", "status": "completed"}
+        await service.handle_a2a_response(message_data)
+
+        mocks["result_handler"].handle_response.assert_called_once_with(message_data)

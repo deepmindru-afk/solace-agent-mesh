@@ -368,7 +368,18 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
 
                                     <div className="space-y-2">
                                         <Label htmlFor="schedule-type">Schedule Type</Label>
-                                        <Select value={config.scheduleType} onValueChange={value => updateConfig({ scheduleType: value as "cron" | "interval" | "one_time" })}>
+                                        <Select
+                                            value={config.scheduleType}
+                                            onValueChange={value => {
+                                                const newType = value as "cron" | "interval" | "one_time";
+                                                const defaultExpressions: Record<string, string> = {
+                                                    cron: "0 9 * * *",
+                                                    interval: "30m",
+                                                    one_time: "",
+                                                };
+                                                updateConfig({ scheduleType: newType, scheduleExpression: defaultExpressions[newType] });
+                                            }}
+                                        >
                                             <SelectTrigger>
                                                 <SelectValue />
                                             </SelectTrigger>
