@@ -223,29 +223,24 @@ class ResultHandler:
 
                 session.commit()
 
-            # Clean up session tracking and signal completion
-            self.execution_sessions.pop(execution_id, None)
-            async with self.pending_executions_lock:
-                event = self.completion_events.pop(execution_id, None)
-            if event:
-                event.set()
-
             log.info(
                 "%s Execution %s completed with %s messages and %s artifacts",
                 self.log_prefix, execution_id, len(messages), len(artifacts),
             )
 
         except Exception as e:
-            # Signal completion even on handler error so caller doesn't hang
-            async with self.pending_executions_lock:
-                event = self.completion_events.pop(execution_id, None)
-            if event:
-                event.set()
             log.error(
                 "%s Error handling success for execution %s: %s",
                 self.log_prefix, execution_id, e,
                 exc_info=True,
             )
+        finally:
+            # Always clean up session tracking and signal completion
+            self.execution_sessions.pop(execution_id, None)
+            async with self.pending_executions_lock:
+                event = self.completion_events.pop(execution_id, None)
+            if event:
+                event.set()
 
     async def _handle_error(self, execution_id: str, error: JSONRPCError):
         """Handle task execution error."""
@@ -273,26 +268,21 @@ class ResultHandler:
 
                 session.commit()
 
-            # Clean up session tracking and signal completion
-            self.execution_sessions.pop(execution_id, None)
-            async with self.pending_executions_lock:
-                event = self.completion_events.pop(execution_id, None)
-            if event:
-                event.set()
-
             log.info("%s Execution %s marked as failed", self.log_prefix, execution_id)
 
         except Exception as e:
-            # Signal completion even on handler error so caller doesn't hang
-            async with self.pending_executions_lock:
-                event = self.completion_events.pop(execution_id, None)
-            if event:
-                event.set()
             log.error(
                 "%s Error handling error for execution %s: %s",
                 self.log_prefix, execution_id, e,
                 exc_info=True,
             )
+        finally:
+            # Always clean up session tracking and signal completion
+            self.execution_sessions.pop(execution_id, None)
+            async with self.pending_executions_lock:
+                event = self.completion_events.pop(execution_id, None)
+            if event:
+                event.set()
 
     def _save_chat_task(
         self,

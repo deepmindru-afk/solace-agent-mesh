@@ -1343,7 +1343,8 @@ async def get_scheduled_task_artifact(
             detail="Invalid scheduler session ID format.",
         )
 
-    # Verify the requesting user owns the task that produced this artifact.
+    # Verify the requesting user owns the task that produced this artifact
+    # and that it belongs to this gateway's namespace.
     # Return 404 (not 403) to avoid confirming existence to unauthorized users.
     from ..repository.scheduled_task_repository import ScheduledTaskRepository
     repo = ScheduledTaskRepository()
@@ -1354,7 +1355,7 @@ async def get_scheduled_task_artifact(
             detail="Artifact not found.",
         )
     task = repo.find_by_id(db, execution.scheduled_task_id)
-    if not task or task.created_by != user_id:
+    if not task or task.created_by != user_id or task.namespace != component.get_namespace():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Artifact not found.",
