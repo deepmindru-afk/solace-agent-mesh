@@ -16,6 +16,7 @@ import { api } from "@/lib/api/client";
 import { ContentRenderer } from "@/lib/components/chat/preview/ContentRenderer";
 import { getRenderType } from "@/lib/components/chat/preview/previewUtils";
 import { MarkdownHTMLConverter } from "@/lib/components/common/MarkdownHTMLConverter";
+import { formatEpochTimestamp, formatDuration } from "@/lib/utils/format";
 
 interface TaskExecutionHistoryPageProps {
     task: ScheduledTask;
@@ -56,7 +57,6 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                     return updated || prev;
                 });
             } catch (error) {
-                console.error("Failed to fetch executions:", error);
                 const errorMsg = error instanceof Error ? error.message : "Failed to load execution history";
                 addNotification(errorMsg, "warning");
             } finally {
@@ -106,28 +106,12 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
         };
     }, [fetchExecutions]);
 
-    const formatTimestamp = (timestamp: number) => {
-        // Check if timestamp is in seconds (< year 3000 in seconds) or milliseconds
-        const date =
-            timestamp < 10000000000
-                ? new Date(timestamp * 1000) // Convert seconds to milliseconds
-                : new Date(timestamp); // Already in milliseconds
-        return date.toLocaleString();
-    };
-
-    const formatDuration = (ms: number) => {
-        if (ms < 1000) return `${ms}ms`;
-        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-        if (ms < 3600000) return `${(ms / 60000).toFixed(1)}m`;
-        return `${(ms / 3600000).toFixed(1)}h`;
-    };
-
     const getStatusBadge = (status: string) => {
         const statusConfig = {
-            completed: { bg: "bg-[var(--color-success-w20)]", text: "text-[var(--color-success-wMain)]", label: "Completed" },
-            failed: { bg: "bg-[var(--color-error-w20)]", text: "text-[var(--color-error-wMain)]", label: "Failed" },
-            running: { bg: "bg-[var(--color-info-w20)]", text: "text-[var(--color-info-wMain)]", label: "Running" },
-            timeout: { bg: "bg-[var(--color-warning-w20)]", text: "text-[var(--color-warning-wMain)]", label: "Timeout" },
+            completed: { bg: "bg-(--color-success-w20)", text: "text-(--color-success-wMain)", label: "Completed" },
+            failed: { bg: "bg-(--color-error-w20)", text: "text-(--color-error-wMain)", label: "Failed" },
+            running: { bg: "bg-(--color-info-w20)", text: "text-(--color-info-wMain)", label: "Running" },
+            timeout: { bg: "bg-(--color-warning-w20)", text: "text-(--color-warning-wMain)", label: "Timeout" },
         };
         const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.failed;
         return <span className={`rounded-full px-2 py-0.5 text-xs ${config.bg} ${config.text}`}>{config.label}</span>;
@@ -184,7 +168,6 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                 const content = await response.text();
                 setArtifactContent(content);
             } catch (error) {
-                console.error("Failed to load artifact:", error);
                 const errorMsg = error instanceof Error ? error.message : "Failed to load artifact content";
                 addNotification(errorMsg, "warning");
             } finally {
@@ -306,7 +289,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                                 {getStatusBadge(execution.status)}
                                                 <span className="text-muted-foreground text-xs">{execution.durationMs ? formatDuration(execution.durationMs) : "-"}</span>
                                             </div>
-                                            <span className="text-muted-foreground block text-xs">{execution.startedAt ? formatTimestamp(execution.startedAt) : "Pending"}</span>
+                                            <span className="text-muted-foreground block text-xs">{execution.startedAt ? formatEpochTimestamp(execution.startedAt) : "Pending"}</span>
                                         </button>
                                     );
                                 })}
@@ -343,12 +326,12 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                 <div className="bg-muted/30 grid grid-cols-2 gap-4 rounded p-4">
                                     <div>
                                         <Label className="text-muted-foreground text-xs">Started</Label>
-                                        <div className="mt-1 text-sm">{selectedExecution.startedAt ? formatTimestamp(selectedExecution.startedAt) : "Pending"}</div>
+                                        <div className="mt-1 text-sm">{selectedExecution.startedAt ? formatEpochTimestamp(selectedExecution.startedAt) : "Pending"}</div>
                                     </div>
                                     {selectedExecution.completedAt && (
                                         <div>
                                             <Label className="text-muted-foreground text-xs">Completed</Label>
-                                            <div className="mt-1 text-sm">{formatTimestamp(selectedExecution.completedAt)}</div>
+                                            <div className="mt-1 text-sm">{formatEpochTimestamp(selectedExecution.completedAt)}</div>
                                         </div>
                                     )}
                                     {selectedExecution.durationMs && (
@@ -368,14 +351,14 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                 {/* Error Message */}
                                 {selectedExecution.errorMessage && (
                                     <div className="space-y-2">
-                                        <Label className="text-[var(--color-secondaryText-wMain)]">Error</Label>
-                                        <div className="rounded bg-[var(--color-error-w20)] p-3 text-sm break-words whitespace-pre-wrap text-[var(--color-error-wMain)]">{selectedExecution.errorMessage}</div>
+                                        <Label className="text-(--color-secondaryText-wMain)">Error</Label>
+                                        <div className="rounded bg-(--color-error-w20) p-3 text-sm break-words whitespace-pre-wrap text-(--color-error-wMain)">{selectedExecution.errorMessage}</div>
                                     </div>
                                 )}
 
                                 {/* Agent Response */}
                                 <div className="space-y-2">
-                                    <Label className="text-[var(--color-secondaryText-wMain)]">Response (Summary)</Label>
+                                    <Label className="text-(--color-secondaryText-wMain)">Response (Summary)</Label>
                                     {renderResponse(selectedExecution)}
                                     <p className="text-muted-foreground text-xs">
                                         This is a truncated summary.{" "}
@@ -395,7 +378,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                 {/* Artifacts */}
                                 {((selectedExecution.artifacts && selectedExecution.artifacts.length > 0) || (selectedExecution.resultSummary?.artifacts && selectedExecution.resultSummary.artifacts.length > 0)) && (
                                     <div className="space-y-2">
-                                        <Label className="text-[var(--color-secondaryText-wMain)]">Artifacts ({(selectedExecution.artifacts?.length || 0) + (selectedExecution.resultSummary?.artifacts?.length || 0)})</Label>
+                                        <Label className="text-(--color-secondaryText-wMain)">Artifacts ({(selectedExecution.artifacts?.length || 0) + (selectedExecution.resultSummary?.artifacts?.length || 0)})</Label>
                                         {renderArtifacts(selectedExecution)}
                                     </div>
                                 )}

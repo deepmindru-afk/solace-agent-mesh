@@ -154,8 +154,6 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
     };
 
     const handleConfigUpdate = (updates: Record<string, unknown>) => {
-        console.log("TaskTemplateBuilder: Received config updates:", updates);
-
         // Convert updates to TaskConfig format (handle both snake_case from API and camelCase)
         const taskUpdates: Partial<TaskConfig> = {};
 

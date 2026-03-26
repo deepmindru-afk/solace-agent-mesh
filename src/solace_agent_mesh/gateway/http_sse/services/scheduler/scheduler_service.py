@@ -629,6 +629,14 @@ class SchedulerService:
                     )
                     sess.add(session_record)
                     sess.commit()
+
+                    # Verify session was persisted to avoid inconsistent state
+                    # if the commit partially failed or was rolled back.
+                    persisted = sess.get(SessionModel, session_id)
+                    if not persisted:
+                        raise RuntimeError(
+                            "Session %s was not found after commit" % session_id
+                        )
             except Exception as e:
                 log.error(
                     "[SchedulerService:%s] Failed to create session for execution %s: %s",

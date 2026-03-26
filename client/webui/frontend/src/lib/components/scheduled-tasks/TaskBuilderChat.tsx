@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Loader2, Sparkles } from "lucide-react";
 import { AudioRecorder, Button, MessageBanner, Textarea } from "@/lib/components";
-import { useAudioSettings, useConfigContext } from "@/lib/hooks";
+import { useAudioSettings, useConfigContext, useChatContext } from "@/lib/hooks";
 import { api } from "@/lib/api/client";
 
 interface Message {
@@ -52,6 +52,7 @@ interface TaskBuilderChatProps {
 }
 
 export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate, currentConfig, onReadyToSave, initialMessage, availableAgents = [] }) => {
+    const { addNotification } = useChatContext();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -139,7 +140,7 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
                         // Scroll to bottom after AI response
                         setTimeout(() => scrollToBottom(), 100);
                     } catch (error) {
-                        console.error("Error sending initial message:", error);
+                        addNotification(error instanceof Error ? error.message : "Failed to process initial message", "warning");
                         const errorMessage: Message = {
                             role: "assistant",
                             content: "I encountered an error processing your request. Please try describing your task manually.",
@@ -151,7 +152,7 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
                     }
                 }
             } catch (error) {
-                console.error("Failed to initialize chat:", error);
+                addNotification(error instanceof Error ? error.message : "Failed to initialize chat", "warning");
                 setMessages([
                     {
                         role: "assistant",
@@ -255,7 +256,7 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
             // Notify parent if ready to save
             onReadyToSave(data.readyToSave);
         } catch (error) {
-            console.error("Error sending message:", error);
+            addNotification(error instanceof Error ? error.message : "Failed to send message", "warning");
             const errorMessage: Message = {
                 role: "assistant",
                 content: "I encountered an error. Could you please try again?",

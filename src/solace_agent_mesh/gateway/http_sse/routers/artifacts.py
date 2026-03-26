@@ -1343,6 +1343,13 @@ async def get_scheduled_task_artifact(
             detail="Invalid scheduler session ID format.",
         )
 
+    # Prevent path traversal attacks via crafted filenames
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid artifact filename.",
+        )
+
     # Verify the requesting user owns the task that produced this artifact
     # and that it belongs to this gateway's namespace.
     # Return 404 (not 403) to avoid confirming existence to unauthorized users.
