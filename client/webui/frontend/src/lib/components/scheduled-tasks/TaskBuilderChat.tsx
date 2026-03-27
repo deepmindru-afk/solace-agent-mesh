@@ -3,6 +3,7 @@ import { Send, Loader2, Sparkles } from "lucide-react";
 import { AudioRecorder, Button, MessageBanner, Textarea } from "@/lib/components";
 import { useAudioSettings, useConfigContext, useChatContext } from "@/lib/hooks";
 import { api } from "@/lib/api/client";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 interface Message {
     role: "user" | "assistant";
@@ -55,12 +56,14 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
     const { addNotification } = useChatContext();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
-    const [isInitializing, setIsInitializing] = useState(true);
     const [hasUserMessage, setHasUserMessage] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const initRef = useRef(false);
+    const currentConfigRef = useRef(currentConfig);
+    currentConfigRef.current = currentConfig;
+    const availableAgentsRef = useRef(availableAgents);
+    availableAgentsRef.current = availableAgents;
 
     // Speech-to-text support
     const { settings } = useAudioSettings();
@@ -68,6 +71,20 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
     const sttEnabled = configFeatureEnablement?.speechToText ?? true;
     const [sttError, setSttError] = useState<string | null>(null);
     const [isRecording, setIsRecording] = useState(false);
+
+    // Fetch greeting via React Query (handles unmount lifecycle)
+    const greetingQuery = useQuery({
+        queryKey: ["scheduled-tasks", "builder", "greeting"],
+        queryFn: () => api.webui.get("/api/v1/scheduled-tasks/builder/greeting") as Promise<{ message: string }>,
+        staleTime: Infinity,
+        refetchOnMount: false,
+    });
+
+    // Chat mutation via React Query (handles unmount lifecycle)
+    const chatMutation = useMutation({
+        mutationFn: (payload: { message: string; conversation_history: Array<{ role: string; content: string }>; current_task: TaskConfig; available_agents: string[] }) =>
+            api.webui.post("/api/v1/scheduled-tasks/builder/chat", payload) as Promise<ApiChatResponse>,
+    });
 
     // Auto-scroll to bottom when new messages arrive
     const scrollToBottom = () => {
@@ -80,96 +97,75 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
 
     // Initialize chat with greeting and optionally send initial message
     useEffect(() => {
-        // Prevent duplicate initialization
-        if (initRef.current) return;
+        if (initRef.current || !greetingQuery.data) return;
         initRef.current = true;
 
-        const initChat = async () => {
-            try {
-                const data = await api.webui.get("/api/v1/scheduled-tasks/builder/greeting");
+        const greetingMessage = greetingQuery.data.message;
+        setMessages([
+            {
+                role: "assistant",
+                content: greetingMessage,
+                timestamp: new Date(),
+            },
+        ]);
 
-                setMessages([
-                    {
-                        role: "assistant",
-                        content: data.message,
-                        timestamp: new Date(),
-                    },
-                ]);
+        // If there's an initial message, send it automatically
+        if (initialMessage) {
+            setHasUserMessage(true);
+            const userMessage: Message = {
+                role: "user",
+                content: initialMessage,
+                timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, userMessage]);
+            setTimeout(() => scrollToBottom(), 100);
 
-                // If there's an initial message, send it automatically
-                if (initialMessage) {
-                    setHasUserMessage(true);
-                    const userMessage: Message = {
-                        role: "user",
-                        content: initialMessage,
-                        timestamp: new Date(),
-                    };
-                    setMessages(prev => [...prev, userMessage]);
-                    setTimeout(() => scrollToBottom(), 100);
-                    setIsLoading(true);
-
-                    // Send the message to the API
-                    try {
-                        const apiData: ApiChatResponse = await api.webui.post("/api/v1/scheduled-tasks/builder/chat", {
-                            message: initialMessage,
-                            conversation_history: [
-                                {
-                                    role: "assistant",
-                                    content: data.message,
-                                },
-                            ],
-                            current_task: currentConfig,
-                            available_agents: availableAgents.map(a => a.name),
-                        });
-
+            chatMutation.mutate(
+                {
+                    message: initialMessage,
+                    conversation_history: [{ role: "assistant", content: greetingMessage }],
+                    current_task: currentConfigRef.current,
+                    available_agents: availableAgentsRef.current.map(a => a.name),
+                },
+                {
+                    onSuccess: apiData => {
                         const chatData = transformChatResponse(apiData);
-
-                        const assistantMessage: Message = {
-                            role: "assistant",
-                            content: chatData.message,
-                            timestamp: new Date(),
-                        };
-                        setMessages(prev => [...prev, assistantMessage]);
-
+                        setMessages(prev => [...prev, { role: "assistant", content: chatData.message, timestamp: new Date() }]);
                         if (Object.keys(chatData.taskUpdates).length > 0) {
                             onConfigUpdate(chatData.taskUpdates);
                         }
-
                         onReadyToSave(chatData.readyToSave);
-
-                        // Scroll to bottom after AI response
                         setTimeout(() => scrollToBottom(), 100);
-                    } catch (error) {
-                        addNotification(error instanceof Error ? error.message : "Failed to process initial message", "warning");
-                        const errorMessage: Message = {
-                            role: "assistant",
-                            content: "I encountered an error processing your request. Please try describing your task manually.",
-                            timestamp: new Date(),
-                        };
-                        setMessages(prev => [...prev, errorMessage]);
-                    } finally {
-                        setIsLoading(false);
-                    }
-                }
-            } catch (error) {
-                addNotification(error instanceof Error ? error.message : "Failed to initialize chat", "warning");
-                setMessages([
-                    {
-                        role: "assistant",
-                        content: "Hi! I'll help you create a scheduled task. What would you like to automate?",
-                        timestamp: new Date(),
                     },
-                ]);
-            } finally {
-                setIsInitializing(false);
-            }
-        };
-
-        initChat();
+                    onError: error => {
+                        addNotification(error instanceof Error ? error.message : "Failed to process initial message", "warning");
+                        setMessages(prev => [...prev, { role: "assistant", content: "I encountered an error processing your request. Please try describing your task manually.", timestamp: new Date() }]);
+                    },
+                }
+            );
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Only run once on mount
+    }, [greetingQuery.data]);
+
+    // Handle greeting fetch error
+    useEffect(() => {
+        if (greetingQuery.error && !initRef.current) {
+            initRef.current = true;
+            addNotification(greetingQuery.error instanceof Error ? greetingQuery.error.message : "Failed to initialize chat", "warning");
+            setMessages([
+                {
+                    role: "assistant",
+                    content: "Hi! I'll help you create a scheduled task. What would you like to automate?",
+                    timestamp: new Date(),
+                },
+            ]);
+        }
+    }, [greetingQuery.error, addNotification]);
 
     // Auto-focus input when component mounts and is not loading
+    const isInitializing = greetingQuery.isLoading;
+    const isLoading = chatMutation.isPending;
+
     useEffect(() => {
         if (!isInitializing && !isLoading && inputRef.current) {
             inputRef.current.focus();
@@ -183,7 +179,6 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
 
         const adjustHeight = () => {
             textarea.style.height = "auto";
-            // Set height based on scrollHeight, with max height of 200px
             const newHeight = Math.min(textarea.scrollHeight, 200);
             textarea.style.height = `${newHeight}px`;
         };
@@ -194,11 +189,8 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
     // Handle transcription from AudioRecorder
     const handleTranscription = useCallback(
         (text: string) => {
-            // Append transcribed text to current input
             const newText = input ? `${input} ${text}` : text;
             setInput(newText);
-
-            // Focus the input after transcription
             setTimeout(() => {
                 inputRef.current?.focus();
             }, 100);
@@ -211,7 +203,7 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
         setSttError(error);
     }, []);
 
-    const handleSend = async () => {
+    const handleSend = () => {
         if (!input.trim() || isLoading) return;
 
         const userMessage: Message = {
@@ -222,51 +214,33 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
 
         setMessages(prev => [...prev, userMessage]);
         setInput("");
-        setIsLoading(true);
         setHasUserMessage(true);
 
-        try {
-            const apiData: ApiChatResponse = await api.webui.post("/api/v1/scheduled-tasks/builder/chat", {
+        chatMutation.mutate(
+            {
                 message: userMessage.content,
-                conversation_history: messages
-                    .filter(m => m.content && m.content.trim().length > 0)
-                    .map(m => ({
-                        role: m.role,
-                        content: m.content,
-                    })),
+                conversation_history: messages.filter(m => m.content && m.content.trim().length > 0).map(m => ({ role: m.role, content: m.content })),
                 current_task: currentConfig,
                 available_agents: availableAgents.map(a => a.name),
-            });
-
-            const data = transformChatResponse(apiData);
-
-            // Add assistant response
-            const assistantMessage: Message = {
-                role: "assistant",
-                content: data.message,
-                timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, assistantMessage]);
-
-            // Update config if there are updates
-            if (Object.keys(data.taskUpdates).length > 0) {
-                onConfigUpdate(data.taskUpdates);
+            },
+            {
+                onSuccess: apiData => {
+                    const data = transformChatResponse(apiData);
+                    setMessages(prev => [...prev, { role: "assistant", content: data.message, timestamp: new Date() }]);
+                    if (Object.keys(data.taskUpdates).length > 0) {
+                        onConfigUpdate(data.taskUpdates);
+                    }
+                    onReadyToSave(data.readyToSave);
+                },
+                onError: error => {
+                    addNotification(error instanceof Error ? error.message : "Failed to send message", "warning");
+                    setMessages(prev => [...prev, { role: "assistant", content: "I encountered an error. Could you please try again?", timestamp: new Date() }]);
+                },
+                onSettled: () => {
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                },
             }
-
-            // Notify parent if ready to save
-            onReadyToSave(data.readyToSave);
-        } catch (error) {
-            addNotification(error instanceof Error ? error.message : "Failed to send message", "warning");
-            const errorMessage: Message = {
-                role: "assistant",
-                content: "I encountered an error. Could you please try again?",
-                timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, errorMessage]);
-        } finally {
-            setIsLoading(false);
-            setTimeout(() => inputRef.current?.focus(), 100);
-        }
+        );
     };
 
     const handleSubmit = (e: React.FormEvent) => {

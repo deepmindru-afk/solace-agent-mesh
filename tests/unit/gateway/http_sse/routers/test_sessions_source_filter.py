@@ -53,6 +53,8 @@ class TestGetAllSessionsSourceFilter:
                 db=mock_db,
                 user=mock_user,
                 session_service=mock_session_service,
+                user_config={},
+                config_resolver=MagicMock(),
             )
 
         assert exc_info.value.status_code == 400
@@ -75,6 +77,8 @@ class TestGetAllSessionsSourceFilter:
             db=mock_db,
             user=mock_user,
             session_service=mock_session_service,
+            user_config={},
+            config_resolver=MagicMock(),
         )
 
         assert result is not None
@@ -100,6 +104,7 @@ class TestGetAllSessionsSourceFilter:
             db=mock_db,
             user=mock_user,
             session_service=mock_session_service,
+            user_config={},
             config_resolver=mock_config_resolver,
         )
 
@@ -123,6 +128,8 @@ class TestGetAllSessionsSourceFilter:
             db=mock_db,
             user=mock_user,
             session_service=mock_session_service,
+            user_config={},
+            config_resolver=MagicMock(),
         )
 
         assert result is not None

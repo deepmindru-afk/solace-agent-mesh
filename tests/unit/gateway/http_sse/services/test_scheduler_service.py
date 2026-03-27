@@ -987,3 +987,120 @@ class TestHandleA2AResponse:
         await service.handle_a2a_response(message_data)
 
         mocks["result_handler"].handle_response.assert_called_once_with(message_data)
+
+
+# ===========================================================================
+# _cleanup_stale_executions
+# ===========================================================================
+
+class TestCleanupStaleExecutions:
+    """Tests for ``_cleanup_stale_executions`` marking stale RUNNING executions as TIMEOUT."""
+
+    @pytest.mark.asyncio
+    async def test_marks_stale_executions_as_timeout(self):
+        """Stale RUNNING executions older than the timeout are marked TIMEOUT."""
+        service, mocks = _build_scheduler_service()
+
+        stale_exec = MagicMock(spec=ScheduledTaskExecutionModel)
+        stale_exec.id = "stale-exec-1"
+        stale_exec.status = ExecutionStatus.RUNNING
+        stale_exec.a2a_task_id = None
+        stale_exec.completed_at = None
+        stale_exec.error_message = None
+
+        # Make execute().scalars().all() return the stale execution
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [stale_exec]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mocks["session"].execute.return_value = mock_result
+
+        await service._cleanup_stale_executions()
+
+        assert stale_exec.status == ExecutionStatus.TIMEOUT
+        assert stale_exec.completed_at is not None
+        assert "stale timeout" in stale_exec.error_message.lower()
+        mocks["session"].commit.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_signals_completion_events_for_stale_executions(self):
+        """When a stale execution has a tracked a2a_task_id, its completion event is signalled."""
+        service, mocks = _build_scheduler_service()
+
+        stale_exec = MagicMock(spec=ScheduledTaskExecutionModel)
+        stale_exec.id = "stale-exec-2"
+        stale_exec.status = ExecutionStatus.RUNNING
+        stale_exec.a2a_task_id = "a2a-stale"
+        stale_exec.completed_at = None
+        stale_exec.error_message = None
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [stale_exec]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mocks["session"].execute.return_value = mock_result
+
+        # Set up in-memory tracking on the result handler
+        mock_event = MagicMock()
+        service.result_handler.pending_executions_lock = asyncio.Lock()
+        service.result_handler.pending_executions = {"a2a-stale": "stale-exec-2"}
+        service.result_handler.execution_sessions = {"stale-exec-2": "session-1"}
+        service.result_handler.completion_events = {"stale-exec-2": mock_event}
+
+        await service._cleanup_stale_executions()
+
+        assert stale_exec.status == ExecutionStatus.TIMEOUT
+        mock_event.set.assert_called_once()
+        # In-memory tracking should be cleaned up
+        assert "a2a-stale" not in service.result_handler.pending_executions
+        assert "stale-exec-2" not in service.result_handler.completion_events
+
+    @pytest.mark.asyncio
+    async def test_no_op_when_no_stale_executions(self):
+        """No error when there are no stale executions."""
+        service, mocks = _build_scheduler_service()
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mocks["session"].execute.return_value = mock_result
+
+        await service._cleanup_stale_executions()
+
+        mocks["session"].commit.assert_called()
+
+
+# ===========================================================================
+# Session creation failure in _submit_task_to_agent_mesh
+# ===========================================================================
+
+class TestSubmitSessionCreationFailure:
+    """Tests that session creation failure in ``_submit_task_to_agent_mesh`` propagates correctly."""
+
+    @pytest.mark.asyncio
+    async def test_session_commit_failure_raises_and_marks_failed(self):
+        """If session.commit raises during session creation, the execution is marked FAILED."""
+        service, mocks = _build_scheduler_service()
+
+        task = _make_mock_task(
+            task_message=[{"type": "text", "text": "hello"}],
+            task_metadata=None,
+        )
+
+        task_snapshot = {
+            "task_message": [{"type": "text", "text": "hello"}],
+            "name": "test-task",
+            "run_count": 0,
+            "task_metadata": None,
+            "target_agent_name": "agent-a",
+            "user_id": "user-1",
+            "created_by": "user-1",
+            "timezone": "UTC",
+        }
+
+        # Make the session commit raise to simulate DB failure
+        mocks["session"].commit.side_effect = RuntimeError("DB commit failed")
+
+        with pytest.raises(RuntimeError, match="Cannot proceed without a valid session"):
+            await service._submit_task_to_agent_mesh("task-1", "exec-1", task_snapshot)

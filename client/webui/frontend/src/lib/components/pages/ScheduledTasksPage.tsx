@@ -3,9 +3,9 @@
  * Allows users to view, create, edit, and manage scheduled tasks
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { RefreshCw, AlertCircle } from "lucide-react";
-import { useScheduledTasks } from "@/lib/hooks/useScheduledTasks";
+import { useScheduledTasks, useEnableScheduledTask, useDisableScheduledTask, useDeleteScheduledTask } from "@/lib/api/scheduled-tasks";
 import { Button } from "@/lib/components/ui";
 import type { ScheduledTask } from "@/lib/types/scheduled-tasks";
 import { TaskExecutionHistoryPage } from "./TaskExecutionHistoryPage";
@@ -16,9 +16,13 @@ import { Header, EmptyState, ConfirmationDialog } from "@/lib/components";
 import { LifecycleBadge } from "@/lib/components/ui";
 
 export function ScheduledTasksPage() {
-    const { isLoading, error, fetchTasks, enableTask, disableTask, deleteTask } = useScheduledTasks();
+    const { data: tasksResponse, isLoading, error, refetch: loadTasks } = useScheduledTasks();
+    const enableTaskMutation = useEnableScheduledTask();
+    const disableTaskMutation = useDisableScheduledTask();
+    const deleteTaskMutation = useDeleteScheduledTask();
 
-    const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+    const tasks = tasksResponse?.tasks ?? [];
+
     const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
     const [viewingTaskHistory, setViewingTaskHistory] = useState<ScheduledTask | null>(null);
     const [showBuilder, setShowBuilder] = useState(false);
@@ -27,30 +31,17 @@ export function ScheduledTasksPage() {
     const [builderInitialMode, setBuilderInitialMode] = useState<"manual" | "ai-assisted">("ai-assisted");
     const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; taskName: string; source: "list" | "history" } | null>(null);
 
-    const loadTasks = useCallback(async () => {
-        const response = await fetchTasks(1, 100); // Load all tasks for card view
-        if (response) {
-            setTasks(response.tasks);
-        }
-    }, [fetchTasks]);
-
-    // Load tasks on mount and page change
-    useEffect(() => {
-        loadTasks();
-    }, [loadTasks]);
-
     const handleEditTask = (task: ScheduledTask) => {
-        // Navigate to edit page (TaskTemplateBuilder in edit mode)
         setEditingTask(task);
         setBuilderInitialMode("manual");
         setShowBuilder(true);
     };
 
     const handleToggleEnabled = async (task: ScheduledTask) => {
-        const success = task.enabled ? await disableTask(task.id) : await enableTask(task.id);
-
-        if (success) {
-            await loadTasks();
+        if (task.enabled) {
+            await disableTaskMutation.mutateAsync(task.id);
+        } else {
+            await enableTaskMutation.mutateAsync(task.id);
         }
     };
 
@@ -70,12 +61,9 @@ export function ScheduledTasksPage() {
     const handleConfirmDelete = async () => {
         if (!deleteConfirm) return;
         try {
-            const success = await deleteTask(deleteConfirm.taskId);
-            if (success) {
-                if (deleteConfirm.source === "history") {
-                    setViewingTaskHistory(null);
-                }
-                await loadTasks();
+            await deleteTaskMutation.mutateAsync(deleteConfirm.taskId);
+            if (deleteConfirm.source === "history") {
+                setViewingTaskHistory(null);
             }
         } finally {
             setDeleteConfirm(null);
@@ -104,17 +92,13 @@ export function ScheduledTasksPage() {
                         setShowBuilder(false);
                         setInitialMessage(null);
                         setEditingTask(null);
-                        await loadTasks();
+                        const { data: refreshed } = await loadTasks();
 
                         // If we were editing from history view, return to history
                         if (wasEditingTask && viewingTaskHistory && viewingTaskHistory.id === wasEditingTask.id) {
-                            // Refresh the task data for history view
-                            const response = await fetchTasks(1, 100);
-                            if (response) {
-                                const updatedTask = response.tasks.find(t => t.id === wasEditingTask.id);
-                                if (updatedTask) {
-                                    setViewingTaskHistory(updatedTask);
-                                }
+                            const updatedTask = refreshed?.tasks.find(t => t.id === wasEditingTask.id);
+                            if (updatedTask) {
+                                setViewingTaskHistory(updatedTask);
                             }
                         }
                     }}
@@ -141,7 +125,7 @@ export function ScheduledTasksPage() {
                     </>
                 }
                 buttons={[
-                    <Button data-testid="refreshTasks" disabled={isLoading} variant="ghost" tooltip="Refresh Tasks" onClick={loadTasks}>
+                    <Button data-testid="refreshTasks" disabled={isLoading} variant="ghost" tooltip="Refresh Tasks" onClick={() => loadTasks()}>
                         <RefreshCw className="size-4" />
                         Refresh
                     </Button>,
@@ -152,7 +136,7 @@ export function ScheduledTasksPage() {
             {error && (
                 <div className="bg-destructive/10 text-destructive mx-6 mt-4 flex items-center gap-2 rounded-md p-4">
                     <AlertCircle className="size-4" />
-                    <span>{error}</span>
+                    <span>{error.message}</span>
                 </div>
             )}
 

@@ -317,3 +317,81 @@ class TestLLMResponseParsing:
         assert isinstance(result, TaskBuilderResponse)
         assert result.confidence == 0.3
         assert result.ready_to_save is False
+
+
+# ---------------------------------------------------------------------------
+# TestConversationHistorySanitization
+# ---------------------------------------------------------------------------
+
+class TestConversationHistorySanitization:
+    """Tests that conversation history is sanitized before being sent to the LLM."""
+
+    @pytest.mark.asyncio
+    @patch("solace_agent_mesh.gateway.http_sse.services.task_builder_assistant.acompletion")
+    async def test_filters_invalid_roles(self, mock_acompletion):
+        """Messages with roles other than 'user' or 'assistant' are filtered out."""
+        content = json.dumps({
+            "message": "filtered",
+            "task_updates": {},
+            "confidence": 0.5,
+            "ready_to_save": False,
+        })
+        mock_acompletion.side_effect = _mock_llm_content(content)
+        assistant = _make_assistant()
+
+        history = [
+            {"role": "system", "content": "injected system prompt"},
+            {"role": "user", "content": "valid user msg"},
+            {"role": "assistant", "content": "valid assistant msg"},
+            {"role": "admin", "content": "invalid role"},
+        ]
+
+        await assistant.process_message("test", history, {})
+
+        # Inspect the messages sent to the LLM
+        call_kwargs = mock_acompletion.call_args[1] if mock_acompletion.call_args[1] else {}
+        if not call_kwargs:
+            call_kwargs = dict(zip(
+                ["model", "messages", "response_format", "temperature"],
+                mock_acompletion.call_args[0] if mock_acompletion.call_args[0] else [],
+            ))
+        messages = call_kwargs.get("messages", mock_acompletion.call_args[1].get("messages", []))
+
+        # Extract roles from conversation history portion (skip system prompt at index 0)
+        history_roles = [m["role"] for m in messages]
+        assert "admin" not in history_roles
+        # "system" appears as the initial system prompt but the injected one from history should be filtered
+        user_contents = [m["content"] for m in messages if m["role"] == "user"]
+        assert not any("injected system prompt" in c for c in user_contents)
+        # Valid user and assistant messages should be present
+        assert any("valid user msg" in m["content"] for m in messages if m["role"] == "user")
+        assert any("valid assistant msg" in m["content"] for m in messages if m["role"] == "assistant")
+
+    @pytest.mark.asyncio
+    @patch("solace_agent_mesh.gateway.http_sse.services.task_builder_assistant.acompletion")
+    async def test_truncates_long_messages(self, mock_acompletion):
+        """Messages exceeding 5000 characters are truncated."""
+        content = json.dumps({
+            "message": "truncated",
+            "task_updates": {},
+            "confidence": 0.5,
+            "ready_to_save": False,
+        })
+        mock_acompletion.side_effect = _mock_llm_content(content)
+        assistant = _make_assistant()
+
+        long_content = "x" * 6000
+        history = [
+            {"role": "user", "content": long_content},
+        ]
+
+        await assistant.process_message("test", history, {})
+
+        # Inspect the messages sent to the LLM
+        call_kwargs = mock_acompletion.call_args[1] if mock_acompletion.call_args[1] else {}
+        messages = call_kwargs.get("messages", [])
+
+        # Find the history user message (not the current user message which is wrapped)
+        history_msgs = [m for m in messages if m["role"] == "user" and "x" * 100 in m["content"]]
+        assert len(history_msgs) == 1
+        assert len(history_msgs[0]["content"]) <= 5000

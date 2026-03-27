@@ -7,7 +7,7 @@ import { TaskBuilderChat } from "./TaskBuilderChat";
 import { TaskPreviewPanel } from "./TaskPreviewPanel";
 import { ScheduleBuilder } from "./ScheduleBuilder";
 import { useAgentCards, useNavigationBlocker } from "@/lib/hooks";
-import { api } from "@/lib/api/client";
+import { useCreateScheduledTask, useUpdateScheduledTask } from "@/lib/api/scheduled-tasks";
 import type { CreateScheduledTaskRequest, ScheduledTask, TargetType } from "@/lib/types/scheduled-tasks";
 
 // Common timezones for the dropdown
@@ -55,9 +55,11 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
     const [builderMode, setBuilderMode] = useState<"manual" | "ai-assisted">(initialMode);
     const [isReadyToSave, setIsReadyToSave] = useState(false);
     const [highlightedFields, setHighlightedFields] = useState<string[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
     const { agents } = useAgentCards();
+    const createTaskMutation = useCreateScheduledTask();
+    const updateTaskMutation = useUpdateScheduledTask();
+    const isLoading = createTaskMutation.isPending || updateTaskMutation.isPending;
 
     // For unsaved changes detection
     const [initialConfig, setInitialConfig] = useState<TaskConfig | null>(null);
@@ -230,8 +232,6 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
             return;
         }
 
-        setIsLoading(true);
-
         try {
             const taskData: CreateScheduledTaskRequest = {
                 name: config.name,
@@ -246,36 +246,23 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
                 timeoutSeconds: editingTask?.timeoutSeconds || 3600,
             };
 
-            const url = isEditing && editingTask ? `/api/v1/scheduled-tasks/${editingTask.id}` : "/api/v1/scheduled-tasks/";
-
-            // Transform to API format (snake_case)
-            const apiData = {
-                name: taskData.name,
-                description: taskData.description,
-                schedule_type: taskData.scheduleType,
-                schedule_expression: taskData.scheduleExpression,
-                timezone: taskData.timezone,
-                target_agent_name: taskData.targetAgentName,
-                target_type: taskData.targetType || "agent",
-                task_message: taskData.taskMessage,
-                enabled: taskData.enabled,
-                timeout_seconds: taskData.timeoutSeconds,
-            };
-
-            const task = isEditing ? await api.webui.patch(url, apiData) : await api.webui.post(url, apiData);
+            let savedTask;
+            if (isEditing && editingTask) {
+                savedTask = await updateTaskMutation.mutateAsync({ taskId: editingTask.id, updates: taskData });
+            } else {
+                savedTask = await createTaskMutation.mutateAsync(taskData);
+            }
 
             // Clear unsaved state and close without check
             allowNavigation(() => {
                 handleClose(true);
                 if (onSuccess) {
-                    onSuccess(task.id);
+                    onSuccess(savedTask.id);
                 }
             });
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : `An error occurred while ${isEditing ? "updating" : "creating"} the task`;
             setValidationErrors({ general: errorMsg });
-        } finally {
-            setIsLoading(false);
         }
     };
 

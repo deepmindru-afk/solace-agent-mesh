@@ -19,6 +19,7 @@ from solace_agent_mesh.gateway.http_sse.routers.scheduled_tasks import (
     delete_scheduled_task,
     enable_scheduled_task,
     disable_scheduled_task,
+    update_scheduled_task,
 )
 
 
@@ -631,3 +632,113 @@ class TestEnableDisableTask:
                 )
 
         assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TestConfigSourceUpdateRestriction
+# ---------------------------------------------------------------------------
+
+
+class TestConfigSourceUpdateRestriction:
+    """Tests that non-enable/disable updates on config-sourced tasks return 403."""
+
+    @pytest.mark.asyncio
+    async def test_config_source_blocks_name_update(self):
+        """Updating a field other than 'enabled' on a config-sourced task returns 403."""
+        from solace_agent_mesh.gateway.http_sse.routers.dto.scheduled_task_dto import (
+            UpdateScheduledTaskRequest,
+        )
+
+        task = _mock_task(task_id="task-cfg", created_by="user-1", user_id="user-1")
+        task.source = "config"
+
+        mock_repo = MagicMock()
+        mock_repo.find_by_id.return_value = task
+
+        request = UpdateScheduledTaskRequest(name="New Name")
+
+        user = {"id": "user-1", "roles": []}
+        mock_db = MagicMock()
+        mock_scheduler_service = MagicMock()
+        mock_agent_registry = MagicMock()
+
+        with patch(
+            "solace_agent_mesh.gateway.http_sse.routers.scheduled_tasks.ScheduledTaskRepository",
+            return_value=mock_repo,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await update_scheduled_task(
+                    task_id="task-cfg",
+                    request=request,
+                    db=mock_db,
+                    user=user,
+                    scheduler_service=mock_scheduler_service,
+                    user_config={},
+                    config_resolver=_mock_config_resolver(),
+                    agent_registry=mock_agent_registry,
+                )
+
+        assert exc_info.value.status_code == 403
+        assert "config" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_config_source_allows_enable_update(self):
+        """Updating only 'enabled' on a config-sourced task is allowed."""
+        from solace_agent_mesh.gateway.http_sse.routers.dto.scheduled_task_dto import (
+            UpdateScheduledTaskRequest,
+        )
+
+        task = _mock_task(task_id="task-cfg", created_by="user-1", user_id="user-1")
+        task.source = "config"
+
+        updated_task = _mock_task(task_id="task-cfg", created_by="user-1", user_id="user-1")
+        updated_task.source = "config"
+        updated_task.name = "My Task"
+        updated_task.description = None
+        updated_task.namespace = "ns"
+        updated_task.schedule_type = "cron"
+        updated_task.schedule_expression = "0 9 * * *"
+        updated_task.timezone = "UTC"
+        updated_task.target_agent_name = "agent-1"
+        updated_task.target_type = "agent"
+        updated_task.task_message = []
+        updated_task.task_metadata = None
+        updated_task.enabled = True
+        updated_task.max_retries = 0
+        updated_task.retry_delay_seconds = 60
+        updated_task.timeout_seconds = 3600
+        updated_task.consecutive_failure_count = 0
+        updated_task.run_count = 0
+        updated_task.notification_config = None
+        updated_task.created_at = 1700000000000
+        updated_task.updated_at = 1700000000000
+        updated_task.next_run_at = None
+        updated_task.last_run_at = None
+
+        mock_repo = MagicMock()
+        mock_repo.find_by_id.return_value = task
+        mock_repo.update_task.return_value = updated_task
+
+        request = UpdateScheduledTaskRequest(enabled=True)
+
+        user = {"id": "user-1", "roles": []}
+        mock_db = MagicMock()
+        mock_scheduler_service = MagicMock()
+        mock_agent_registry = MagicMock()
+
+        with patch(
+            "solace_agent_mesh.gateway.http_sse.routers.scheduled_tasks.ScheduledTaskRepository",
+            return_value=mock_repo,
+        ):
+            result = await update_scheduled_task(
+                task_id="task-cfg",
+                request=request,
+                db=mock_db,
+                user=user,
+                scheduler_service=mock_scheduler_service,
+                user_config={},
+                config_resolver=_mock_config_resolver(),
+                agent_registry=mock_agent_registry,
+            )
+
+        assert result.id == "task-cfg"

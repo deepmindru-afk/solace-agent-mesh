@@ -608,9 +608,11 @@ class SchedulerService:
                     task_created_by = task.created_by
                     task_timezone = task.timezone
 
-            # --- Step 1b: Create a real session for this execution ---
+            # --- Step 1b: Create session and mark execution RUNNING in a single transaction ---
             # This makes scheduled task outputs visible in the chat session list
             # and ensures artifacts flow through the standard artifact service.
+            # Both operations are committed together to avoid orphaned session records
+            # if the execution status update were to fail separately.
             user_id = task_user_id or task_created_by or "system-scheduler"
             session_id = f"scheduled_{execution_id}"
             try:
@@ -628,6 +630,12 @@ class SchedulerService:
                         updated_time=now,
                     )
                     sess.add(session_record)
+
+                    # Also mark execution as RUNNING in the same transaction
+                    execution = sess.get(ScheduledTaskExecutionModel, execution_id)
+                    if execution:
+                        execution.status = ExecutionStatus.RUNNING
+                        execution.started_at = now
                     sess.commit()
 
                     # Verify session was persisted to avoid inconsistent state
@@ -700,13 +708,11 @@ class SchedulerService:
                 "userId": task_user_id or task_created_by or "system-scheduler",
             }
 
-            # --- Step 3: Update execution status (brief session) ---
+            # --- Step 3: Set a2a_task_id on execution (brief session) ---
             with self.session_factory() as session:
                 execution = session.get(ScheduledTaskExecutionModel, execution_id)
                 if execution:
-                    execution.status = ExecutionStatus.RUNNING
                     execution.a2a_task_id = a2a_task_id
-                    execution.started_at = now_epoch_ms()
                     session.commit()
 
             # --- Step 4: Register, publish, and wait (no session held) ---

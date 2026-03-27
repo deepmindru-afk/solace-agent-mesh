@@ -171,7 +171,8 @@ class ResultHandler:
 
                 # Extract artifacts from task metadata (produced_artifacts manifest)
                 # Agents attach artifact manifests to metadata, not bundled in the response
-                session_id = self.execution_sessions.get(execution_id)
+                async with self.pending_executions_lock:
+                    session_id = self.execution_sessions.get(execution_id)
                 task_metadata = a2a.get_task_metadata(result)
                 if task_metadata and isinstance(task_metadata, dict):
                     artifact_list = task_metadata.get("produced_artifacts") or task_metadata.get("artifact_manifest", [])
@@ -252,8 +253,8 @@ class ResultHandler:
             )
         finally:
             # Always clean up session tracking and signal completion
-            self.execution_sessions.pop(execution_id, None)
             async with self.pending_executions_lock:
+                self.execution_sessions.pop(execution_id, None)
                 event = self.completion_events.pop(execution_id, None)
             if event:
                 event.set()
@@ -294,8 +295,8 @@ class ResultHandler:
             )
         finally:
             # Always clean up session tracking and signal completion
-            self.execution_sessions.pop(execution_id, None)
             async with self.pending_executions_lock:
+                self.execution_sessions.pop(execution_id, None)
                 event = self.completion_events.pop(execution_id, None)
             if event:
                 event.set()

@@ -599,7 +599,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             // Extract feedback state from task metadata
             const feedbackMap: Record<string, { type: "up" | "down"; text: string }> = {};
             for (const task of migratedTasks) {
-                const meta = typeof task.taskMetadata === "string" ? JSON.parse(task.taskMetadata) : task.taskMetadata;
+                let meta = null;
+                try {
+                    meta = typeof task.taskMetadata === "string" ? JSON.parse(task.taskMetadata) : task.taskMetadata;
+                } catch {
+                    // Malformed JSON in persisted metadata — skip gracefully
+                }
 
                 if (meta?.feedback) {
                     feedbackMap[task.taskId] = {
@@ -616,9 +621,14 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             // (Use the last task's agent since that's the most recent interaction)
             let agentName: string | null = null;
             for (let i = migratedTasks.length - 1; i >= 0; i--) {
-                const meta = typeof migratedTasks[i].taskMetadata === "string" ? JSON.parse(migratedTasks[i].taskMetadata) : migratedTasks[i].taskMetadata;
-                if (meta?.agent_name) {
-                    agentName = meta.agent_name;
+                let agentMeta = null;
+                try {
+                    agentMeta = typeof migratedTasks[i].taskMetadata === "string" ? JSON.parse(migratedTasks[i].taskMetadata) : migratedTasks[i].taskMetadata;
+                } catch {
+                    // Malformed JSON in persisted metadata — skip gracefully
+                }
+                if (agentMeta?.agent_name) {
+                    agentName = agentMeta.agent_name;
                     break;
                 }
             }
