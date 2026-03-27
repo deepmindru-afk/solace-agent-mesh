@@ -583,7 +583,7 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                                                                 <TooltipContent>Scheduled task execution</TooltipContent>
                                                             </Tooltip>
                                                         )}
-                                                        <SessionName session={session} respondingSessionId={respondingSessionId} isSelected={session.id === sessionId} />
+                                                        <SessionName session={session} respondingSessionId={respondingSessionId} />
                                                         {session.hasRunningBackgroundTask && (
                                                             <Tooltip>
                                                                 <TooltipTrigger asChild>
