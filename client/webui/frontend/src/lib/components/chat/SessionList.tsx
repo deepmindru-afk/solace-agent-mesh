@@ -24,6 +24,9 @@ import {
     SelectTrigger,
     SelectValue,
     Spinner,
+    Tabs,
+    TabsList,
+    TabsTrigger,
     Tooltip,
     TooltipContent,
     TooltipTrigger,
@@ -139,7 +142,7 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
     const [hasMore, setHasMore] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [selectedProject, setSelectedProject] = useState<string>("all");
-    const [sourceFilter, setSourceFilter] = useState<string>("all");
+    const [activeTab, setActiveTab] = useState<"chat" | "scheduler">("chat");
     const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
     const [sessionToMove, setSessionToMove] = useState<Session | null>(null);
     const [regeneratingTitleForSession, setRegeneratingTitleForSession] = useState<string | null>(null);
@@ -161,9 +164,7 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
 
             try {
                 let url = `/api/v1/sessions?pageNumber=${pageNumber}&pageSize=20`;
-                if (sourceFilter !== "all") {
-                    url += `&source=${sourceFilter}`;
-                }
+                url += `&source=${activeTab}`;
                 const result: PaginatedSessionsResponse = await api.webui.get(url);
 
                 if (append) {
@@ -181,7 +182,7 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                 setIsLoading(false);
             }
         },
-        [sourceFilter]
+        [activeTab]
     );
 
     useEffect(() => {
@@ -234,7 +235,7 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
             window.removeEventListener("session-title-updated", handleTitleUpdated);
             window.removeEventListener("background-task-completed", handleBackgroundTaskCompleted);
         };
-    }, [fetchSessions, sourceFilter]);
+    }, [fetchSessions, activeTab]);
 
     // Periodic refresh when there are sessions with running background tasks
     // This is necessary to detect task completion when user is on a different session
@@ -475,43 +476,39 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                     <SessionSearch onSessionSelect={handleSwitchSession} projectId={selectedProjectId} />
                 </div>
 
-                {/* Filters row */}
-                {persistenceEnabled && (
-                    <div className="flex flex-col gap-2 pr-4">
-                        {/* Source Filter */}
-                        <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium">Show:</label>
-                            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                                <SelectTrigger className="flex-1 rounded-md">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Sessions</SelectItem>
-                                    <SelectItem value="chat">Chat Only</SelectItem>
-                                    <SelectItem value="scheduler">Scheduled Only</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                {/* Tabs: Chats / Scheduled */}
+                <div className="pr-4">
+                    <Tabs value={activeTab} onValueChange={value => setActiveTab(value as "chat" | "scheduler")}>
+                        <TabsList className="w-full bg-transparent p-0">
+                            <TabsTrigger value="chat" className="rounded-none rounded-l-md">
+                                <MessageCircle className="h-4 w-4 shrink-0" />
+                                Chats
+                            </TabsTrigger>
+                            <TabsTrigger value="scheduler" className="rounded-none rounded-r-md border-l-0">
+                                <CalendarClock className="h-4 w-4 shrink-0" />
+                                Scheduled Tasks
+                            </TabsTrigger>
+                        </TabsList>
+                    </Tabs>
+                </div>
 
-                        {/* Project Filter */}
-                        {projectNames.length > 0 && (
-                            <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium">Project:</label>
-                                <Select value={selectedProject} onValueChange={setSelectedProject}>
-                                    <SelectTrigger className="flex-1 rounded-md">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Chats</SelectItem>
-                                        {projectNames.map(projectName => (
-                                            <SelectItem key={projectName} value={projectName}>
-                                                {projectName}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        )}
+                {/* Project Filter (only for chats tab) */}
+                {persistenceEnabled && activeTab === "chat" && projectNames.length > 0 && (
+                    <div className="flex items-center gap-2 pr-4">
+                        <label className="text-sm font-medium">Project:</label>
+                        <Select value={selectedProject} onValueChange={setSelectedProject}>
+                            <SelectTrigger className="flex-1 rounded-md">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Chats</SelectItem>
+                                {projectNames.map(projectName => (
+                                    <SelectItem key={projectName} value={projectName}>
+                                        {projectName}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
                 )}
             </div>
@@ -575,14 +572,6 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                                             <div className="flex items-center gap-2">
                                                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                                                     <div className="flex items-center gap-2">
-                                                        {session.source === "scheduler" && (
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <CalendarClock className="h-3.5 w-3.5 flex-shrink-0 text-(--secondary-text-wMain)" />
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>Scheduled task execution</TooltipContent>
-                                                            </Tooltip>
-                                                        )}
                                                         <SessionName session={session} respondingSessionId={respondingSessionId} />
                                                         {session.hasRunningBackgroundTask && (
                                                             <Tooltip>
@@ -650,15 +639,17 @@ export const SessionList: React.FC<SessionListProps> = ({ projects = [] }) => {
                                                         <Sparkles size={16} className={`mr-2 ${regeneratingTitleForSession === session.id ? "animate-pulse" : ""}`} />
                                                         Rename with AI
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        onClick={e => {
-                                                            e.stopPropagation();
-                                                            handleMoveClick(session);
-                                                        }}
-                                                    >
-                                                        <FolderInput size={16} className="mr-2" />
-                                                        Move to Project
-                                                    </DropdownMenuItem>
+                                                    {session.source !== "scheduler" && (
+                                                        <DropdownMenuItem
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                handleMoveClick(session);
+                                                            }}
+                                                        >
+                                                            <FolderInput size={16} className="mr-2" />
+                                                            Move to Project
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {chatSharingEnabled && (
                                                         <DropdownMenuItem
                                                             onClick={e => {

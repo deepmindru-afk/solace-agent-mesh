@@ -115,6 +115,7 @@ class ResultHandler:
         try:
             result_summary = {}
             artifacts = []
+            rag_data = []
             messages = []  # Truncated for result_summary storage
             full_messages = []  # Full text for chat bubble display
 
@@ -125,6 +126,17 @@ class ResultHandler:
                         result_summary["agent_response"] = agent_text[:1000]
                         messages.append({"role": "agent", "text": agent_text[:1000]})
                         full_messages.append({"role": "agent", "text": agent_text})
+
+                    # Extract RAG metadata from data parts (inline citations)
+                    data_parts = a2a.get_data_parts_from_message(result.status.message)
+                    for data_part in data_parts:
+                        data = a2a.get_data_from_data_part(data_part)
+                        if isinstance(data, dict) and data.get("type") == "tool_result":
+                            result_data = data.get("result_data", {})
+                            if isinstance(result_data, dict) and "rag_metadata" in result_data:
+                                rag_metadata = result_data["rag_metadata"]
+                                if isinstance(rag_metadata, dict):
+                                    rag_data.append(rag_metadata)
 
                     file_parts = a2a.get_file_parts_from_message(result.status.message)
                     for file_part in file_parts:
@@ -161,6 +173,16 @@ class ResultHandler:
                                         "name": art_name,
                                         "uri": uri,
                                     })
+                        # Extract RAG metadata from history messages too
+                        history_data_parts = a2a.get_data_parts_from_message(msg)
+                        for data_part in history_data_parts:
+                            data = a2a.get_data_from_data_part(data_part)
+                            if isinstance(data, dict) and data.get("type") == "tool_result":
+                                result_data = data.get("result_data", {})
+                                if isinstance(result_data, dict) and "rag_metadata" in result_data:
+                                    rag_metadata = result_data["rag_metadata"]
+                                    if isinstance(rag_metadata, dict) and rag_metadata not in rag_data:
+                                        rag_data.append(rag_metadata)
 
                 if messages:
                     result_summary["messages"] = messages
@@ -236,7 +258,7 @@ class ResultHandler:
                 # Create ChatTask so content appears in the chat session view
                 execution = repo.find_execution_by_id(session, execution_id)
                 if execution:
-                    self._save_chat_task(session, execution, full_messages, artifacts=artifacts)
+                    self._save_chat_task(session, execution, full_messages, artifacts=artifacts, rag_data=rag_data)
 
                 session.commit()
 
@@ -308,6 +330,7 @@ class ResultHandler:
         messages: list,
         artifacts: list = None,
         is_error: bool = False,
+        rag_data: list = None,
     ):
         """Create a ChatTask record so scheduled execution content appears in the chat UI.
 
@@ -387,12 +410,40 @@ class ResultHandler:
                 return
 
             now = now_epoch_ms()
-            task_metadata = json.dumps({
+            task_metadata_dict = {
                 "schema_version": 1,
                 "status": "error" if is_error else "completed",
                 "agent_name": task.target_agent_name if task else None,
                 "source": "scheduler",
-            })
+            }
+
+            # Merge RAG data: from A2A result (if any) + from task_events logged by TaskLoggerService
+            all_rag_data = list(rag_data) if rag_data else []
+            a2a_task_id = execution.a2a_task_id or ""
+
+            # Extract RAG data from task_events (intermediate status updates contain data parts
+            # with rag_metadata that aren't present in the final aggregated response buffer)
+            try:
+                events_rag = self._extract_rag_from_task_events(db_session, a2a_task_id)
+                for entry in events_rag:
+                    if entry not in all_rag_data:
+                        all_rag_data.append(entry)
+            except Exception as e:
+                log.warning(
+                    "%s Failed to extract RAG data from task events for execution %s: %s",
+                    self.log_prefix, execution.id, e,
+                )
+
+            if all_rag_data:
+                for entry in all_rag_data:
+                    if "taskId" not in entry:
+                        entry["taskId"] = a2a_task_id
+                task_metadata_dict["rag_data"] = all_rag_data
+                log.info(
+                    "%s Including %s RAG data entries for execution %s",
+                    self.log_prefix, len(all_rag_data), execution.id,
+                )
+            task_metadata = json.dumps(task_metadata_dict)
 
             chat_task = ChatTaskModel(
                 id=execution.a2a_task_id or str(uuid.uuid4()),
@@ -415,6 +466,52 @@ class ResultHandler:
                 "%s Failed to create ChatTask for execution %s: %s",
                 self.log_prefix, execution.id, e,
             )
+
+    def _extract_rag_from_task_events(self, db_session: DBSession, task_id: str) -> list:
+        """Extract RAG metadata from task_events stored by TaskLoggerService.
+
+        The intermediate streaming status updates contain data parts with
+        rag_metadata that are not present in the final aggregated Task response.
+        """
+        from ...repository.task_repository import TaskRepository
+
+        repo = TaskRepository()
+        task_with_events = repo.find_by_id_with_events(db_session, task_id)
+        if not task_with_events:
+            return []
+
+        _, events = task_with_events
+        rag_data = []
+
+        for event in events:
+            try:
+                payload = event.payload if isinstance(event.payload, dict) else json.loads(event.payload)
+                if event.direction != "status" or "result" not in payload:
+                    continue
+
+                result = payload["result"]
+                status = result.get("status", {})
+                if not isinstance(status, dict):
+                    continue
+
+                message = status.get("message", {})
+                if not isinstance(message, dict):
+                    continue
+
+                for part in message.get("parts", []):
+                    if not isinstance(part, dict) or part.get("kind") != "data":
+                        continue
+                    data = part.get("data", {})
+                    if isinstance(data, dict) and data.get("type") == "tool_result":
+                        result_data = data.get("result_data", {})
+                        if isinstance(result_data, dict) and "rag_metadata" in result_data:
+                            rag_metadata = result_data["rag_metadata"]
+                            if isinstance(rag_metadata, dict) and rag_metadata not in rag_data:
+                                rag_data.append(rag_metadata)
+            except Exception:
+                continue
+
+        return rag_data
 
     def _is_scheduler_response(self, topic: str) -> bool:
         """Check if a topic is a scheduler response topic."""
