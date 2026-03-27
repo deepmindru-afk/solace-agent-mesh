@@ -129,8 +129,16 @@ class ResultHandler:
                     file_parts = a2a.get_file_parts_from_message(result.status.message)
                     for file_part in file_parts:
                         uri = a2a.get_uri_from_file_part(file_part)
-                        if uri and uri not in artifacts:
-                            artifacts.append(uri)
+                        if uri:
+                            art_name = uri.rsplit("/", 1)[-1] if "/" in uri else uri
+                            if not any(
+                                (a.get("name") if isinstance(a, dict) else None) == art_name
+                                for a in artifacts
+                            ):
+                                artifacts.append({
+                                    "name": art_name,
+                                    "uri": uri,
+                                })
 
                 history = a2a.get_task_history(result)
                 if history:
@@ -143,8 +151,16 @@ class ResultHandler:
                         file_parts = a2a.get_file_parts_from_message(msg)
                         for file_part in file_parts:
                             uri = a2a.get_uri_from_file_part(file_part)
-                            if uri and uri not in artifacts:
-                                artifacts.append(uri)
+                            if uri:
+                                art_name = uri.rsplit("/", 1)[-1] if "/" in uri else uri
+                                if not any(
+                                    (a.get("name") if isinstance(a, dict) else None) == art_name
+                                    for a in artifacts
+                                ):
+                                    artifacts.append({
+                                        "name": art_name,
+                                        "uri": uri,
+                                    })
 
                 if messages:
                     result_summary["messages"] = messages

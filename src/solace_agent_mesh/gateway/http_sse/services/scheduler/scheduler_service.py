@@ -383,7 +383,8 @@ class SchedulerService:
         for attempt in range(max_retries + 1):
             execution_id = None
             try:
-                # Check max concurrent executions
+                # Hold the lock from count check through insertion to prevent
+                # concurrent coroutines from exceeding max_concurrent_executions.
                 async with self._execution_lock:
                     current_running = len(self.running_executions)
                     if current_running >= self.max_concurrent_executions:
@@ -406,31 +407,30 @@ class SchedulerService:
                                 session.commit()
                         return
 
-                with self.session_factory() as session:
-                    task = session.get(ScheduledTaskModel, task_id)
-                    if not task or not task.enabled or task.deleted_at:
-                        log.warning("[SchedulerService:%s] Task %s not found, disabled, or deleted", self.instance_id, task_id)
-                        return
+                    with self.session_factory() as session:
+                        task = session.get(ScheduledTaskModel, task_id)
+                        if not task or not task.enabled or task.deleted_at:
+                            log.warning("[SchedulerService:%s] Task %s not found, disabled, or deleted", self.instance_id, task_id)
+                            return
 
-                    execution_id = str(uuid.uuid4())
-                    current_time = now_epoch_ms()
+                        execution_id = str(uuid.uuid4())
+                        current_time = now_epoch_ms()
 
-                    execution = ScheduledTaskExecutionModel(
-                        id=execution_id,
-                        scheduled_task_id=task.id,
-                        status=ExecutionStatus.PENDING,
-                        scheduled_for=current_time,
-                        retry_count=attempt,
+                        execution = ScheduledTaskExecutionModel(
+                            id=execution_id,
+                            scheduled_task_id=task.id,
+                            status=ExecutionStatus.PENDING,
+                            scheduled_for=current_time,
+                            retry_count=attempt,
+                        )
+                        session.add(execution)
+                        task.last_run_at = current_time
+                        session.commit()
+
+                    execution_task = asyncio.create_task(
+                        self._submit_task_to_agent_mesh(task_id, execution_id, task_snapshot)
                     )
-                    session.add(execution)
-                    task.last_run_at = current_time
-                    session.commit()
 
-                execution_task = asyncio.create_task(
-                    self._submit_task_to_agent_mesh(task_id, execution_id, task_snapshot)
-                )
-
-                async with self._execution_lock:
                     self.running_executions[execution_id] = execution_task
 
                 execution_failed = False

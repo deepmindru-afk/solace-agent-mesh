@@ -30,6 +30,7 @@ from .dto.scheduled_task_dto import (
     SchedulePreviewResponse,
 )
 from ..services.task_builder_assistant import TaskBuilderAssistant, TaskBuilderResponse
+from ..services.scheduler.scheduler_service import _SAFE_METADATA_KEYS
 
 log = logging.getLogger(__name__)
 
@@ -241,6 +242,7 @@ async def create_scheduled_task(
     agent_registry=Depends(get_agent_registry),
 ):
     """Create a new scheduled task."""
+    _validate_scheduling_permission(user_config, config_resolver)
     user_id = user.get("id")
     log.info("User %s creating scheduled task: %s", user_id, request.name)
 
@@ -489,6 +491,7 @@ async def update_scheduled_task(
     agent_registry=Depends(get_agent_registry),
 ):
     """Update a scheduled task."""
+    _validate_scheduling_permission(user_config, config_resolver)
     user_id = user.get("id")
     try:
         repo = ScheduledTaskRepository()
@@ -565,8 +568,11 @@ async def delete_scheduled_task(
     db: DBSession = Depends(get_db),
     user: dict = Depends(get_current_user),
     scheduler_service=Depends(get_scheduler_service),
+    user_config: dict = Depends(get_user_config),
+    config_resolver=Depends(get_config_resolver),
 ):
     """Soft delete a scheduled task."""
+    _validate_scheduling_permission(user_config, config_resolver)
     user_id = user.get("id")
     try:
         repo = ScheduledTaskRepository()
@@ -602,8 +608,11 @@ async def enable_scheduled_task(
     db: DBSession = Depends(get_db),
     user: dict = Depends(get_current_user),
     scheduler_service=Depends(get_scheduler_service),
+    user_config: dict = Depends(get_user_config),
+    config_resolver=Depends(get_config_resolver),
 ):
     """Enable a scheduled task."""
+    _validate_scheduling_permission(user_config, config_resolver)
     user_id = user.get("id")
     try:
         repo = ScheduledTaskRepository()
@@ -637,8 +646,11 @@ async def disable_scheduled_task(
     db: DBSession = Depends(get_db),
     user: dict = Depends(get_current_user),
     scheduler_service=Depends(get_scheduler_service),
+    user_config: dict = Depends(get_user_config),
+    config_resolver=Depends(get_config_resolver),
 ):
     """Disable a scheduled task."""
+    _validate_scheduling_permission(user_config, config_resolver)
     user_id = user.get("id")
     try:
         repo = ScheduledTaskRepository()

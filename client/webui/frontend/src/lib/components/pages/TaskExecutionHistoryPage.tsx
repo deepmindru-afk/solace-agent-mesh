@@ -149,6 +149,18 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
         return <p className="text-muted-foreground">No response data available</p>;
     };
 
+    /**
+     * Convert an artifact URI to an API path the browser can fetch.
+     * `artifact://{session_id}/{filename}` → `/api/v1/artifacts/scheduled/{session_id}/{filename}`
+     */
+    const resolveArtifactUri = (uri: string): string => {
+        if (uri.startsWith("artifact://")) {
+            const path = uri.slice("artifact://".length);
+            return `/api/v1/artifacts/scheduled/${path}`;
+        }
+        return uri;
+    };
+
     const handlePreviewArtifact = async (artifact: ArtifactInfo) => {
         // Toggle: if clicking the same artifact, close the panel
         if (previewArtifact && previewArtifact.name === artifact.name) {
@@ -163,10 +175,19 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
         if (artifact.uri) {
             setLoadingArtifact(true);
             try {
-                const response = await api.webui.get(artifact.uri, { fullResponse: true });
+                const apiPath = resolveArtifactUri(artifact.uri);
+                const response = await api.webui.get(apiPath, { fullResponse: true });
 
-                const content = await response.text();
-                setArtifactContent(content);
+                const contentType = response.headers?.get("content-type") || "";
+                const isText = contentType.startsWith("text/") || contentType.includes("json") || contentType.includes("xml") || contentType.includes("javascript") || contentType.includes("csv");
+                if (isText) {
+                    const content = await response.text();
+                    setArtifactContent(content);
+                } else {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    setArtifactContent(url);
+                }
             } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : "Failed to load artifact content";
                 addNotification(errorMsg, "warning");
@@ -442,9 +463,9 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                             variant="ghost"
                                             size="sm"
                                             onClick={() => {
-                                                // Restrict to same-origin URLs to prevent open redirect.
                                                 try {
-                                                    const url = new URL(previewArtifact.uri, window.location.origin);
+                                                    const resolved = resolveArtifactUri(previewArtifact.uri);
+                                                    const url = new URL(resolved, window.location.origin);
                                                     if (url.origin !== window.location.origin) {
                                                         console.warn("Blocked external artifact URL:", previewArtifact.uri);
                                                         return;
