@@ -1343,8 +1343,11 @@ async def get_scheduled_task_artifact(
             detail="Invalid scheduler session ID format.",
         )
 
-    # Prevent path traversal attacks via crafted filenames
-    if ".." in filename or "/" in filename or "\\" in filename:
+    # Prevent path traversal attacks via crafted filenames (including URL-encoded sequences)
+    import os
+    from urllib.parse import unquote
+    decoded_filename = unquote(filename)
+    if os.path.basename(decoded_filename) != decoded_filename or not decoded_filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid artifact filename.",

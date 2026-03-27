@@ -46,7 +46,7 @@ export const TaskDetailSidePanel: React.FC<TaskDetailSidePanelProps> = ({ task, 
             <div className="border-b p-4">
                 <div className="mb-2 flex items-center justify-between">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <Calendar className="text-muted-foreground h-5 w-5 flex-shrink-0" />
+                        <Calendar className="h-5 w-5 flex-shrink-0 text-(--secondary-text-wMain)" />
                         <Tooltip delayDuration={300}>
                             <TooltipTrigger asChild>
                                 <h2 className="cursor-default truncate text-lg font-semibold">{task.name}</h2>
@@ -107,25 +107,25 @@ export const TaskDetailSidePanel: React.FC<TaskDetailSidePanelProps> = ({ task, 
             {/* Content */}
             <div className="flex-1 space-y-6 overflow-y-auto p-4">
                 {/* Description and Schedule - with background */}
-                <div className="bg-muted/50 space-y-6 rounded p-4">
+                <div className="space-y-6 rounded bg-(--secondary-w20) p-4">
                     {/* Description */}
                     <div>
-                        <h3 className="text-muted-foreground mb-2 text-xs font-semibold">Description</h3>
+                        <h3 className="mb-2 text-xs font-semibold text-(--secondary-text-wMain)">Description</h3>
                         <div className="text-sm leading-relaxed">{task.description || "No description provided."}</div>
                     </div>
 
                     {/* Schedule */}
                     <div>
-                        <h3 className="text-muted-foreground mb-2 text-xs font-semibold">Schedule</h3>
+                        <h3 className="mb-2 text-xs font-semibold text-(--secondary-text-wMain)">Schedule</h3>
                         <div className="text-sm">
                             <div className="font-medium">{formatSchedule(task)}</div>
-                            <div className="text-muted-foreground mt-1 text-xs">Timezone: {task.timezone}</div>
+                            <div className="mt-1 text-xs text-(--secondary-text-wMain)">Timezone: {task.timezone}</div>
                         </div>
                     </div>
 
                     {/* Target Agent/Workflow */}
                     <div>
-                        <h3 className="text-muted-foreground mb-2 text-xs font-semibold">Target {task.targetType === "workflow" ? "Workflow" : "Agent"}</h3>
+                        <h3 className="mb-2 text-xs font-semibold text-(--secondary-text-wMain)">Target {task.targetType === "workflow" ? "Workflow" : "Agent"}</h3>
                         <div className="text-primary bg-primary/10 inline-block rounded px-2 py-0.5 font-mono text-xs">{task.targetAgentName}</div>
                     </div>
                 </div>
@@ -133,26 +133,26 @@ export const TaskDetailSidePanel: React.FC<TaskDetailSidePanelProps> = ({ task, 
                 {/* Task Message - no background */}
                 {task.taskMessage && task.taskMessage.length > 0 && (
                     <div>
-                        <h3 className="text-muted-foreground mb-2 text-xs font-semibold">Task Message</h3>
-                        <div className="bg-muted/30 rounded p-3 font-mono text-xs break-words whitespace-pre-wrap">{task.taskMessage[0]?.text || "No message"}</div>
+                        <h3 className="mb-2 text-xs font-semibold text-(--secondary-text-wMain)">Task Message</h3>
+                        <div className="rounded bg-(--secondary-w10) p-3 font-mono text-xs break-words whitespace-pre-wrap">{task.taskMessage[0]?.text || "No message"}</div>
                     </div>
                 )}
 
                 {/* Execution Stats */}
                 {(task.lastRunAt || task.nextRunAt) && (
-                    <div className="bg-muted/50 space-y-4 rounded p-4">
-                        <h3 className="text-muted-foreground text-xs font-semibold">Execution Schedule</h3>
+                    <div className="space-y-4 rounded bg-(--secondary-w20) p-4">
+                        <h3 className="text-xs font-semibold text-(--secondary-text-wMain)">Execution Schedule</h3>
 
                         {task.lastRunAt && (
                             <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Last Run:</span>
+                                <span className="text-(--secondary-text-wMain)">Last Run:</span>
                                 <span className="font-medium">{formatTimestamp(task.lastRunAt)}</span>
                             </div>
                         )}
 
                         {task.nextRunAt && (
                             <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Next Run:</span>
+                                <span className="text-(--secondary-text-wMain)">Next Run:</span>
                                 <span className="font-medium">{formatTimestamp(task.nextRunAt)}</span>
                             </div>
                         )}
@@ -162,18 +162,18 @@ export const TaskDetailSidePanel: React.FC<TaskDetailSidePanelProps> = ({ task, 
 
             {/* Metadata - Sticky at bottom */}
             <div className="bg-background space-y-2 border-t p-4">
-                <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-xs text-(--secondary-text-wMain)">
                     <User size={12} />
                     <span>Created by: {task.createdBy || task.userId || "System"}</span>
                 </div>
                 {task.createdAt && (
-                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-xs text-(--secondary-text-wMain)">
                         <Calendar size={12} />
                         <span>Created: {formatTimestamp(task.createdAt)}</span>
                     </div>
                 )}
                 {task.updatedAt && task.updatedAt !== task.createdAt && (
-                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-xs text-(--secondary-text-wMain)">
                         <Calendar size={12} />
                         <span>Last updated: {formatTimestamp(task.updatedAt)}</span>
                     </div>

@@ -119,7 +119,7 @@ export const TaskCards: React.FC<TaskCardsProps> = ({ tasks, onManualCreate, onA
                                                     <div className="border-b">
                                                         <button
                                                             onClick={clearStatuses}
-                                                            className="text-muted-foreground hover:text-foreground hover:bg-muted flex min-h-[24px] w-full cursor-pointer items-center gap-1 px-3 py-2 text-left text-xs transition-colors"
+                                                            className="flex min-h-[24px] w-full cursor-pointer items-center gap-1 px-3 py-2 text-left text-xs text-(--secondary-text-wMain) transition-colors hover:bg-(--secondary-w10) hover:text-(--primary-text-wMain)"
                                                         >
                                                             <X size={14} />
                                                             {selectedStatuses.length === 1 ? "Clear Filter" : "Clear Filters"}
@@ -128,7 +128,7 @@ export const TaskCards: React.FC<TaskCardsProps> = ({ tasks, onManualCreate, onA
                                                 )}
                                                 <div className="p-1">
                                                     {statuses.map(status => (
-                                                        <label key={status} className="hover:bg-muted flex cursor-pointer items-center gap-2 rounded px-2 py-1.5">
+                                                        <label key={status} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-(--secondary-w10)">
                                                             <input type="checkbox" checked={selectedStatuses.includes(status)} onChange={() => toggleStatus(status)} className="rounded" />
                                                             <span className="text-sm">{status}</span>
                                                         </label>

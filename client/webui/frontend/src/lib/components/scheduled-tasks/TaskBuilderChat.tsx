@@ -279,7 +279,7 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
             <div className="flex h-full items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                     <Loader2 className="text-primary h-8 w-8 animate-spin" />
-                    <p className="text-muted-foreground text-sm">Initializing AI assistant...</p>
+                    <p className="text-sm text-(--secondary-text-wMain)">Initializing AI assistant...</p>
                 </div>
             </div>
         );
@@ -312,7 +312,7 @@ export const TaskBuilderChat: React.FC<TaskBuilderChatProps> = ({ onConfigUpdate
                     <div className="flex justify-start">
                         <div className="flex items-center gap-2 rounded-2xl px-4 py-3">
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            <span className="text-muted-foreground text-sm">Thinking...</span>
+                            <span className="text-sm text-(--secondary-text-wMain)">Thinking...</span>
                         </div>
                     </div>
                 )}

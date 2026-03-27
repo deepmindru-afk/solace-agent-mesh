@@ -12,7 +12,7 @@ import { TaskExecutionHistoryPage } from "./TaskExecutionHistoryPage";
 import { TaskTemplateBuilder } from "@/lib/components/scheduled-tasks/TaskTemplateBuilder";
 import { GenerateTaskDialog } from "@/lib/components/scheduled-tasks/GenerateTaskDialog";
 import { TaskCards } from "@/lib/components/scheduled-tasks/TaskCards";
-import { Header, EmptyState } from "@/lib/components";
+import { Header, EmptyState, ConfirmationDialog } from "@/lib/components";
 import { LifecycleBadge } from "@/lib/components/ui";
 
 export function ScheduledTasksPage() {
@@ -25,6 +25,7 @@ export function ScheduledTasksPage() {
     const [showGenerateDialog, setShowGenerateDialog] = useState(false);
     const [initialMessage, setInitialMessage] = useState<string | null>(null);
     const [builderInitialMode, setBuilderInitialMode] = useState<"manual" | "ai-assisted">("ai-assisted");
+    const [deleteConfirm, setDeleteConfirm] = useState<{ taskId: string; taskName: string; source: "list" | "history" } | null>(null);
 
     const loadTasks = useCallback(async () => {
         const response = await fetchTasks(1, 100); // Load all tasks for card view
@@ -53,13 +54,9 @@ export function ScheduledTasksPage() {
         }
     };
 
-    const handleDelete = async (taskId: string) => {
-        if (confirm("Are you sure you want to delete this scheduled task?")) {
-            const success = await deleteTask(taskId);
-            if (success) {
-                await loadTasks();
-            }
-        }
+    const handleDelete = (taskId: string) => {
+        const task = tasks.find(t => t.id === taskId);
+        setDeleteConfirm({ taskId, taskName: task?.name || "this task", source: "list" });
     };
 
     const handleViewExecutions = (task: ScheduledTask) => {
@@ -67,13 +64,21 @@ export function ScheduledTasksPage() {
     };
 
     const handleDeleteFromHistory = (taskId: string, taskName: string) => {
-        if (confirm(`Are you sure you want to delete "${taskName}"?`)) {
-            deleteTask(taskId).then(success => {
-                if (success) {
+        setDeleteConfirm({ taskId, taskName, source: "history" });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deleteConfirm) return;
+        try {
+            const success = await deleteTask(deleteConfirm.taskId);
+            if (success) {
+                if (deleteConfirm.source === "history") {
                     setViewingTaskHistory(null);
-                    loadTasks();
                 }
-            });
+                await loadTasks();
+            }
+        } finally {
+            setDeleteConfirm(null);
         }
     };
 
@@ -172,6 +177,18 @@ export function ScheduledTasksPage() {
 
             {/* Generate Task Dialog */}
             <GenerateTaskDialog isOpen={showGenerateDialog} onClose={() => setShowGenerateDialog(false)} onGenerate={handleGenerateTask} />
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmationDialog
+                open={!!deleteConfirm}
+                title="Delete Scheduled Task"
+                description={`Are you sure you want to delete "${deleteConfirm?.taskName}"?`}
+                onOpenChange={open => {
+                    if (!open) setDeleteConfirm(null);
+                }}
+                onConfirm={handleConfirmDelete}
+                actionLabels={{ confirm: "Delete", cancel: "Cancel" }}
+            />
         </div>
     );
 }

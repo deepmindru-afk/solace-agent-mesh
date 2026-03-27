@@ -3,7 +3,7 @@
  * Calendar-style schedule builder
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { MessageBanner } from "@/lib/components/common/MessageBanner";
 
@@ -246,6 +246,10 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
     const [rawCron, setRawCron] = useState(value);
     const [cronValidation, setCronValidation] = useState<{ valid: boolean; error?: string }>({ valid: true });
 
+    // Stabilize onChange via ref to avoid re-triggering the effect on every render
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
+
     // Initialize schedule config from cron or use defaults
     const initialConfig: ScheduleConfig = cronToSchedule(value) || {
         frequency: "daily",
@@ -263,9 +267,8 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
         if (config.frequency !== "custom") {
             const newCron = scheduleToCron(config);
             setRawCron(newCron);
-            onChange(newCron);
+            onChangeRef.current(newCron);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [config]);
 
     // Handle custom cron changes
@@ -276,7 +279,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
 
         // Only propagate valid cron expressions
         if (validation.valid) {
-            onChange(newCron);
+            onChangeRef.current(newCron);
         }
     };
 
@@ -308,7 +311,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
         return (
             <div className="space-y-3">
                 <div>
-                    <label className="text-muted-foreground mb-2 block text-xs">Frequency</label>
+                    <label className="mb-2 block text-xs text-(--secondary-text-wMain)">Frequency</label>
                     <select className="max-w-xs rounded-md border px-3 py-2" value={config.frequency} onChange={e => updateConfig({ frequency: e.target.value as FrequencyType })}>
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
@@ -337,38 +340,38 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
                     {!cronValidation.valid && cronValidation.error ? (
                         <MessageBanner variant="error" message={cronValidation.error} className="mt-2" />
                     ) : (
-                        <p className="text-muted-foreground mt-1 text-xs">
+                        <p className="mt-1 text-xs text-(--secondary-text-wMain)">
                             Format: <span className="font-mono">minute hour day month weekday</span>
                         </p>
                     )}
                 </div>
 
                 {/* Syntax Guide */}
-                <div className="bg-muted/30 space-y-2 rounded-lg p-3">
-                    <p className="text-muted-foreground text-xs font-semibold">Common Examples:</p>
+                <div className="space-y-2 rounded-lg bg-(--secondary-w10) p-3">
+                    <p className="text-xs font-semibold text-(--secondary-text-wMain)">Common Examples:</p>
                     <div className="space-y-1 font-mono text-xs">
                         <div className="flex justify-between">
                             <span className="text-primary">0 9 * * *</span>
-                            <span className="text-muted-foreground">Every day at 9:00 AM</span>
+                            <span className="text-(--secondary-text-wMain)">Every day at 9:00 AM</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-primary">0 */6 * * *</span>
-                            <span className="text-muted-foreground">Every 6 hours</span>
+                            <span className="text-(--secondary-text-wMain)">Every 6 hours</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-primary">0 9 * * 1</span>
-                            <span className="text-muted-foreground">Every Monday at 9:00 AM</span>
+                            <span className="text-(--secondary-text-wMain)">Every Monday at 9:00 AM</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-primary">0 0 1 * *</span>
-                            <span className="text-muted-foreground">First day of month at midnight</span>
+                            <span className="text-(--secondary-text-wMain)">First day of month at midnight</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-primary">*/15 * * * *</span>
-                            <span className="text-muted-foreground">Every 15 minutes</span>
+                            <span className="text-(--secondary-text-wMain)">Every 15 minutes</span>
                         </div>
                     </div>
-                    <p className="text-muted-foreground mt-2 text-xs">
+                    <p className="mt-2 text-xs text-(--secondary-text-wMain)">
                         Use <span className="font-mono">*</span> for "any", <span className="font-mono">,</span> for lists, <span className="font-mono">-</span> for ranges, <span className="font-mono">/</span> for intervals
                     </p>
                 </div>
@@ -381,7 +384,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
         <div className="space-y-4">
             {/* Frequency Selector */}
             <div>
-                <label className="text-muted-foreground mb-2 block text-xs">Frequency</label>
+                <label className="mb-2 block text-xs text-(--secondary-text-wMain)">Frequency</label>
                 <select className="max-w-xs rounded-md border px-3 py-2" value={config.frequency} onChange={e => updateConfig({ frequency: e.target.value as FrequencyType })}>
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
@@ -394,7 +397,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
             {/* Hourly Interval */}
             {config.frequency === "hourly" && (
                 <div>
-                    <label className="text-muted-foreground mb-2 block text-xs">Every</label>
+                    <label className="mb-2 block text-xs text-(--secondary-text-wMain)">Every</label>
                     <select className="max-w-xs rounded-md border px-3 py-2" value={config.hourInterval} onChange={e => updateConfig({ hourInterval: parseInt(e.target.value) })}>
                         <option value="1">1 hour</option>
                         <option value="2">2 hours</option>
@@ -409,7 +412,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
             {/* Time Picker (for non-hourly) */}
             {config.frequency !== "hourly" && (
                 <div>
-                    <label className="text-muted-foreground mb-2 block text-xs">Time</label>
+                    <label className="mb-2 block text-xs text-(--secondary-text-wMain)">Time</label>
                     <div className="flex items-center gap-2">
                         <input
                             type="text"
@@ -451,7 +454,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
             {/* Weekly Day Selector */}
             {config.frequency === "weekly" && (
                 <div>
-                    <label className="text-muted-foreground mb-2 block text-xs">Days of Week</label>
+                    <label className="mb-2 block text-xs text-(--secondary-text-wMain)">Days of Week</label>
                     <div className="flex flex-wrap gap-2">
                         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => (
                             <button
@@ -473,7 +476,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
             {/* Monthly Day Selector */}
             {config.frequency === "monthly" && (
                 <div>
-                    <label className="text-muted-foreground mb-2 block text-xs">Day of Month</label>
+                    <label className="mb-2 block text-xs text-(--secondary-text-wMain)">Day of Month</label>
                     <select className="max-w-xs rounded-md border px-3 py-2" value={config.monthDay} onChange={e => updateConfig({ monthDay: parseInt(e.target.value) })}>
                         {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
                             <option key={day} value={day}>
@@ -487,7 +490,7 @@ export function ScheduleBuilder({ value, onChange }: { value: string; onChange: 
             {/* Preview */}
             {
                 <div className="bg-accent/30 rounded-lg p-3 text-sm">
-                    <p className="text-muted-foreground mb-1 text-xs">Preview:</p>
+                    <p className="mb-1 text-xs text-(--secondary-text-wMain)">Preview:</p>
                     <p className="font-medium">{getScheduleDescription(config)}</p>
                 </div>
             }

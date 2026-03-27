@@ -22,6 +22,13 @@ from solace_agent_mesh.gateway.http_sse.routers.scheduled_tasks import (
 )
 
 
+def _mock_config_resolver(valid=True):
+    """Build a mock config_resolver that passes scheduling permission."""
+    resolver = MagicMock()
+    resolver.validate_operation_config.return_value = {"valid": valid}
+    return resolver
+
+
 def _mock_execution(scheduled_task_id="task-1", a2a_task_id="a2a-123", **overrides):
     """Build a mock ScheduledTaskExecutionModel."""
     execution = MagicMock()
@@ -466,6 +473,8 @@ class TestDeleteScheduledTask:
                 db=mock_db,
                 user=user,
                 scheduler_service=mock_scheduler_service,
+                user_config={},
+                config_resolver=_mock_config_resolver(),
             )
 
         mock_repo.soft_delete.assert_called_once_with(mock_db, "task-1", "user-1")
@@ -492,6 +501,8 @@ class TestDeleteScheduledTask:
                     db=mock_db,
                     user=user,
                     scheduler_service=mock_scheduler_service,
+                    user_config={},
+                    config_resolver=_mock_config_resolver(),
                 )
 
         assert exc_info.value.status_code == 404
@@ -529,6 +540,8 @@ class TestEnableDisableTask:
                 db=mock_db,
                 user=user,
                 scheduler_service=mock_scheduler_service,
+                user_config={},
+                config_resolver=_mock_config_resolver(),
             )
 
         assert result.success is True
@@ -559,6 +572,8 @@ class TestEnableDisableTask:
                 db=mock_db,
                 user=user,
                 scheduler_service=mock_scheduler_service,
+                user_config={},
+                config_resolver=_mock_config_resolver(),
             )
 
         assert result.success is True
@@ -585,6 +600,8 @@ class TestEnableDisableTask:
                     db=mock_db,
                     user=user,
                     scheduler_service=mock_scheduler_service,
+                    user_config={},
+                    config_resolver=_mock_config_resolver(),
                 )
 
         assert exc_info.value.status_code == 404
@@ -609,6 +626,8 @@ class TestEnableDisableTask:
                     db=mock_db,
                     user=user,
                     scheduler_service=mock_scheduler_service,
+                    user_config={},
+                    config_resolver=_mock_config_resolver(),
                 )
 
         assert exc_info.value.status_code == 404

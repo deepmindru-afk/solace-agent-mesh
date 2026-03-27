@@ -100,34 +100,34 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
                 {/* Task Name */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <Label className="text-muted-foreground text-sm font-medium">Task Name</Label>
+                        <Label className="text-sm font-medium text-(--secondary-text-wMain)">Task Name</Label>
                         {isFieldHighlighted("name") && (
                             <Badge variant="default" className="bg-primary text-primary-foreground text-xs">
                                 Updated
                             </Badge>
                         )}
                     </div>
-                    <div className="rounded p-3 text-sm">{config.name || <span className="text-muted-foreground italic">No task name yet</span>}</div>
+                    <div className="rounded p-3 text-sm">{config.name || <span className="text-(--secondary-text-wMain) italic">No task name yet</span>}</div>
                 </div>
 
                 {/* Description */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <Label className="text-muted-foreground text-sm font-medium">Description</Label>
+                        <Label className="text-sm font-medium text-(--secondary-text-wMain)">Description</Label>
                         {isFieldHighlighted("description") && (
                             <Badge variant="default" className="bg-primary text-primary-foreground text-xs">
                                 Updated
                             </Badge>
                         )}
                     </div>
-                    <div className="rounded p-3 text-sm">{config.description || <span className="text-muted-foreground italic">No description yet</span>}</div>
+                    <div className="rounded p-3 text-sm">{config.description || <span className="text-(--secondary-text-wMain) italic">No description yet</span>}</div>
                 </div>
 
                 {/* Schedule */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <Calendar className="text-muted-foreground h-4 w-4" />
-                        <label className="text-muted-foreground text-sm font-medium">Schedule</label>
+                        <Calendar className="h-4 w-4 text-(--secondary-text-wMain)" />
+                        <label className="text-sm font-medium text-(--secondary-text-wMain)">Schedule</label>
                         {(isFieldHighlighted("scheduleType") || isFieldHighlighted("scheduleExpression")) && (
                             <Badge variant="default" className="bg-primary text-primary-foreground text-xs">
                                 Updated
@@ -136,16 +136,16 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
                     </div>
                     <div className="bg-card space-y-2 rounded-lg border p-3">
                         <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground text-xs">Type</span>
+                            <span className="text-xs text-(--secondary-text-wMain)">Type</span>
                             <span className="text-sm font-medium">{getScheduleTypeLabel(config.scheduleType)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground text-xs">Expression</span>
+                            <span className="text-xs text-(--secondary-text-wMain)">Expression</span>
                             <span className="font-mono text-sm">{formatScheduleExpression(config.scheduleType, config.scheduleExpression)}</span>
                         </div>
                         {config.timezone && (
                             <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground text-xs">Timezone</span>
+                                <span className="text-xs text-(--secondary-text-wMain)">Timezone</span>
                                 <span className="text-sm">{config.timezone}</span>
                             </div>
                         )}
@@ -155,8 +155,8 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
                 {/* Target Agent/Workflow */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <User className="text-muted-foreground h-4 w-4" />
-                        <label className="text-muted-foreground text-sm font-medium">Target {config.targetType === "workflow" ? "Workflow" : "Agent"}</label>
+                        <User className="h-4 w-4 text-(--secondary-text-wMain)" />
+                        <label className="text-sm font-medium text-(--secondary-text-wMain)">Target {config.targetType === "workflow" ? "Workflow" : "Agent"}</label>
                         {(isFieldHighlighted("targetAgentName") || isFieldHighlighted("targetType")) && (
                             <Badge variant="default" className="bg-primary text-primary-foreground text-xs">
                                 Updated
@@ -164,15 +164,15 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
                         )}
                     </div>
                     <div className="bg-card rounded-lg border p-3">
-                        <p className="text-sm font-medium">{config.targetAgentName || <span className="text-muted-foreground italic">Not set</span>}</p>
+                        <p className="text-sm font-medium">{config.targetAgentName || <span className="text-(--secondary-text-wMain) italic">Not set</span>}</p>
                     </div>
                 </div>
 
                 {/* Task Message */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <MessageSquare className="text-muted-foreground h-4 w-4" />
-                        <label className="text-muted-foreground text-sm font-medium">Task Message</label>
+                        <MessageSquare className="h-4 w-4 text-(--secondary-text-wMain)" />
+                        <label className="text-sm font-medium text-(--secondary-text-wMain)">Task Message</label>
                         {isFieldHighlighted("taskMessage") && (
                             <Badge variant="default" className="bg-primary text-primary-foreground text-xs">
                                 Updated
@@ -180,19 +180,19 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
                         )}
                     </div>
                     <div className="bg-card rounded-lg border p-3">
-                        <p className="text-sm whitespace-pre-wrap">{config.taskMessage || <span className="text-muted-foreground italic">Not set</span>}</p>
+                        <p className="text-sm whitespace-pre-wrap">{config.taskMessage || <span className="text-(--secondary-text-wMain) italic">Not set</span>}</p>
                     </div>
                 </div>
 
                 {/* Status */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <Clock className="text-muted-foreground h-4 w-4" />
-                        <label className="text-muted-foreground text-sm font-medium">Status</label>
+                        <Clock className="h-4 w-4 text-(--secondary-text-wMain)" />
+                        <label className="text-sm font-medium text-(--secondary-text-wMain)">Status</label>
                     </div>
                     <div className="bg-card rounded-lg border p-3">
                         <div className="flex items-center gap-2">
-                            <div className={`h-2 w-2 rounded-full ${config.enabled ? "bg-(--success-wMain)" : "bg-muted-foreground"}`} />
+                            <div className={`h-2 w-2 rounded-full ${config.enabled ? "bg-(--success-wMain)" : "bg-(--secondary-text-wMain)"}`} />
                             <span className="text-sm">{config.enabled ? "Enabled" : "Disabled"}</span>
                         </div>
                     </div>
@@ -200,8 +200,8 @@ export const TaskPreviewPanel: React.FC<TaskPreviewPanelProps> = ({ config, high
 
                 {/* Help Text */}
                 {!isReadyToSave && (
-                    <div className="bg-muted/50 rounded-lg p-4">
-                        <p className="text-muted-foreground text-sm">Continue chatting with the AI to refine your task configuration. When all required fields are set, you'll be able to save the task.</p>
+                    <div className="rounded-lg bg-(--secondary-w20) p-4">
+                        <p className="text-sm text-(--secondary-text-wMain)">Continue chatting with the AI to refine your task configuration. When all required fields are set, you'll be able to save the task.</p>
                     </div>
                 )}
             </div>

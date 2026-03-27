@@ -49,7 +49,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to fetch tasks";
             setError(errorMsg);
-            console.error("Error fetching scheduled tasks:", err);
+
             return null;
         } finally {
             stopLoading();
@@ -72,7 +72,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to fetch task";
             setError(errorMsg);
-            console.error("Error fetching scheduled task:", err);
+
             return null;
         } finally {
             stopLoading();
@@ -98,7 +98,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to create task";
             setError(errorMsg);
-            console.error("Error creating scheduled task:", err);
+
             return null;
         } finally {
             stopLoading();
@@ -124,7 +124,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to update task";
             setError(errorMsg);
-            console.error("Error updating scheduled task:", err);
+
             return null;
         } finally {
             stopLoading();
@@ -146,7 +146,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to delete task";
             setError(errorMsg);
-            console.error("Error deleting scheduled task:", err);
+
             return false;
         } finally {
             stopLoading();
@@ -168,7 +168,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to enable task";
             setError(errorMsg);
-            console.error("Error enabling scheduled task:", err);
+
             return false;
         } finally {
             stopLoading();
@@ -190,7 +190,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to disable task";
             setError(errorMsg);
-            console.error("Error disabling scheduled task:", err);
+
             return false;
         } finally {
             stopLoading();
@@ -221,7 +221,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to fetch executions";
             setError(errorMsg);
-            console.error("Error fetching executions:", err);
+
             return null;
         } finally {
             stopLoading();
@@ -247,7 +247,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to fetch recent executions";
             setError(errorMsg);
-            console.error("Error fetching recent executions:", err);
+
             return null;
         } finally {
             stopLoading();
@@ -289,7 +289,7 @@ export function useScheduledTasks() {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "Failed to fetch scheduler status";
             setError(errorMsg);
-            console.error("Error fetching scheduler status:", err);
+
             return null;
         } finally {
             stopLoading();

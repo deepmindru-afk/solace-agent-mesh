@@ -272,7 +272,6 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
                 }
             });
         } catch (error) {
-            console.error(`Error ${isEditing ? "updating" : "creating"} task:`, error);
             const errorMsg = error instanceof Error ? error.message : `An error occurred while ${isEditing ? "updating" : "creating"} the task`;
             setValidationErrors({ general: errorMsg });
         } finally {
@@ -333,7 +332,7 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
 
                     {/* Right Panel - Task Preview (only in AI mode) */}
                     {builderMode === "ai-assisted" && (
-                        <div className="bg-muted/30 w-[60%] overflow-hidden">
+                        <div className="w-[60%] overflow-hidden bg-(--secondary-w10)">
                             <TaskPreviewPanel config={config} highlightedFields={highlightedFields} isReadyToSave={isReadyToSave} />
                         </div>
                     )}
@@ -406,7 +405,7 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
                                                 className={`max-w-xs ${validationErrors.scheduleExpression ? "border-red-500" : ""}`}
                                             />
                                             {validationErrors.scheduleExpression && <p className="text-sm text-red-600">{validationErrors.scheduleExpression}</p>}
-                                            <p className="text-muted-foreground text-xs">Format: 30m, 1h, 2h, etc.</p>
+                                            <p className="text-xs text-(--secondary-text-wMain)">Format: 30m, 1h, 2h, etc.</p>
                                         </div>
                                     )}
 
@@ -424,7 +423,7 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
                                                 className={`max-w-md ${validationErrors.scheduleExpression ? "border-red-500" : ""}`}
                                             />
                                             {validationErrors.scheduleExpression && <p className="text-sm text-red-600">{validationErrors.scheduleExpression}</p>}
-                                            <p className="text-muted-foreground text-xs">ISO 8601 format: YYYY-MM-DDTHH:MM:SS</p>
+                                            <p className="text-xs text-(--secondary-text-wMain)">ISO 8601 format: YYYY-MM-DDTHH:MM:SS</p>
                                         </div>
                                     )}
 
@@ -442,7 +441,7 @@ export const TaskTemplateBuilder: React.FC<TaskTemplateBuilderProps> = ({ onBack
                                                 ))}
                                             </SelectContent>
                                         </Select>
-                                        <p className="text-muted-foreground text-xs">Your local timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                        <p className="text-xs text-(--secondary-text-wMain)">Your local timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
                                     </div>
                                 </div>
 

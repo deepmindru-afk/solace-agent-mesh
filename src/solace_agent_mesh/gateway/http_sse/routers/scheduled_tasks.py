@@ -254,25 +254,25 @@ async def create_scheduled_task(
         )
 
     # Phase 2.1: RBAC - Validate target agent access
-    if request.target_agent_name:
-        agent = agent_registry.get_agent(request.target_agent_name)
-        if not agent:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Target agent '{request.target_agent_name}' not found in registry"
-            )
-        operation_spec = {
-            "operation_type": "agent_access",
-            "target_agent": request.target_agent_name,
-        }
-        validation_result = config_resolver.validate_operation_config(
-            user_config, operation_spec, {"source": "scheduled_tasks_endpoint"}
+    target_agent = request.target_agent_name or "OrchestratorAgent"
+    agent = agent_registry.get_agent(target_agent)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target agent '{target_agent}' not found in registry"
         )
-        if not validation_result.get("valid", False):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Not authorized to target agent '{request.target_agent_name}'"
-            )
+    operation_spec = {
+        "operation_type": "agent_access",
+        "target_agent": target_agent,
+    }
+    validation_result = config_resolver.validate_operation_config(
+        user_config, operation_spec, {"source": "scheduled_tasks_endpoint"}
+    )
+    if not validation_result.get("valid", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Not authorized to target agent '{target_agent}'"
+        )
 
     try:
         repo = ScheduledTaskRepository()

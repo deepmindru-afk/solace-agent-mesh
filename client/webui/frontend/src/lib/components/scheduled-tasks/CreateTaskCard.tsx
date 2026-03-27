@@ -18,8 +18,8 @@ export const CreateTaskCard: React.FC<CreateTaskCardProps> = ({ onManualCreate, 
                 <div className="flex h-full w-full flex-col items-center justify-center gap-6">
                     {/* Title and description */}
                     <div className="flex flex-col items-center gap-2">
-                        <h2 className="text-foreground text-2xl font-semibold">Create New Task</h2>
-                        <p className="text-muted-foreground text-sm">Choose how you'd like to create your scheduled task</p>
+                        <h2 className="text-2xl font-semibold text-(--primary-text-wMain)">Create New Task</h2>
+                        <p className="text-sm text-(--secondary-text-wMain)">Choose how you'd like to create your scheduled task</p>
                     </div>
 
                     {/* Action buttons */}

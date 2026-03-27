@@ -163,8 +163,11 @@ class TestCreateTaskAgentRBAC:
         user = {"id": "user-1", "roles": []}
         user_config = {}
         config_resolver = MagicMock()
-        # Agent access check fails
-        config_resolver.validate_operation_config.return_value = {"valid": False}
+        # First call: scheduling permission passes; second call: agent access fails
+        config_resolver.validate_operation_config.side_effect = [
+            {"valid": True},
+            {"valid": False},
+        ]
         agent_registry = MagicMock()
         agent_registry.get_agent.return_value = MagicMock()  # agent exists
 

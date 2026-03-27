@@ -119,12 +119,12 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
 
     const renderResponse = (execution: TaskExecution) => {
         const summary = execution.resultSummary;
-        if (!summary) return <p className="text-muted-foreground">No response available</p>;
+        if (!summary) return <p className="text-(--secondary-text-wMain)">No response available</p>;
 
         // For RUN_BASED sessions, show agentResponse with full markdown formatting
         if (summary.agentResponse) {
             return (
-                <div className="bg-muted/30 rounded p-3 text-sm">
+                <div className="rounded bg-(--secondary-w10) p-3 text-sm">
                     <MarkdownHTMLConverter>{summary.agentResponse}</MarkdownHTMLConverter>
                 </div>
             );
@@ -136,8 +136,8 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                 <div className="space-y-3">
                     {summary.messages.map((msg: { role: string; text: string }, idx: number) => (
                         <div key={idx} className="space-y-1">
-                            <div className="text-muted-foreground text-xs font-medium capitalize">{msg.role || "Unknown"}</div>
-                            <div className="bg-muted/30 rounded p-3 text-sm">
+                            <div className="text-xs font-medium text-(--secondary-text-wMain) capitalize">{msg.role || "Unknown"}</div>
+                            <div className="rounded bg-(--secondary-w10) p-3 text-sm">
                                 <MarkdownHTMLConverter>{msg.text || "No content"}</MarkdownHTMLConverter>
                             </div>
                         </div>
@@ -146,7 +146,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
             );
         }
 
-        return <p className="text-muted-foreground">No response data available</p>;
+        return <p className="text-(--secondary-text-wMain)">No response data available</p>;
     };
 
     /**
@@ -206,7 +206,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
         const allArtifacts = [...topLevelArtifacts.map(a => (typeof a === "string" ? { name: a, uri: `artifact://${a}` } : a)), ...summaryArtifacts];
 
         if (allArtifacts.length === 0) {
-            return <p className="text-muted-foreground text-sm">No artifacts generated</p>;
+            return <p className="text-sm text-(--secondary-text-wMain)">No artifacts generated</p>;
         }
 
         return (
@@ -228,16 +228,21 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                             onClick={() => isViewable && handlePreviewArtifact(artifactInfo)}
                             disabled={!isViewable}
                             className={`group flex w-full items-center justify-between rounded p-3 text-left transition-colors ${
-                                isViewable ? (isCurrentlyPreviewed ? "bg-primary/10 border-primary/20 border" : "bg-muted/30 hover:bg-primary/10 cursor-pointer") : "bg-muted/20 cursor-not-allowed opacity-60"
+                                isViewable ? (isCurrentlyPreviewed ? "border border-(--primary-w20) bg-(--primary-w10)" : "cursor-pointer bg-(--secondary-w10) hover:bg-(--primary-w10)") : "cursor-not-allowed bg-(--secondary-w10) opacity-60"
                             }`}
                         >
                             <div className="flex min-w-0 flex-1 items-center gap-2">
-                                <FileText className="text-muted-foreground size-4 flex-shrink-0" />
-                                <span className={`truncate text-sm ${isViewable ? (isCurrentlyPreviewed ? "text-primary font-medium" : "group-hover:text-primary") : ""}`} title={filename}>
+                                <FileText className="size-4 flex-shrink-0 text-(--secondary-text-wMain)" />
+                                <span className={`truncate text-sm ${isViewable ? (isCurrentlyPreviewed ? "font-medium text-(--primary-wMain)" : "group-hover:text-(--primary-wMain)") : ""}`} title={filename}>
                                     {filename}
                                 </span>
                             </div>
-                            {isViewable && (isCurrentlyPreviewed ? <ChevronLeft className="text-primary size-4 transition-colors" /> : <ChevronRight className="text-muted-foreground group-hover:text-primary size-4 transition-colors" />)}
+                            {isViewable &&
+                                (isCurrentlyPreviewed ? (
+                                    <ChevronLeft className="size-4 text-(--primary-wMain) transition-colors" />
+                                ) : (
+                                    <ChevronRight className="size-4 text-(--secondary-text-wMain) transition-colors group-hover:text-(--primary-wMain)" />
+                                ))}
                         </button>
                     );
                 })}
@@ -288,13 +293,13 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                 {/* Left Sidebar - Execution List */}
                 <div className="w-[300px] overflow-y-auto border-r">
                     <div className="p-4">
-                        <h3 className="text-muted-foreground mb-3 text-sm font-semibold">Executions ({executions.length})</h3>
+                        <h3 className="mb-3 text-sm font-semibold text-(--secondary-text-wMain)">Executions ({executions.length})</h3>
                         {isLoading ? (
                             <div className="flex items-center justify-center p-8">
                                 <div className="border-primary size-6 animate-spin rounded-full border-2 border-t-transparent" />
                             </div>
                         ) : executions.length === 0 ? (
-                            <p className="text-muted-foreground p-4 text-center text-sm">No executions yet</p>
+                            <p className="p-4 text-center text-sm text-(--secondary-text-wMain)">No executions yet</p>
                         ) : (
                             <div className="space-y-2">
                                 {executions.map(execution => {
@@ -304,13 +309,13 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                         <button
                                             key={execution.id}
                                             onClick={() => setSelectedExecution(execution)}
-                                            className={`w-full rounded p-3 text-left transition-colors ${isSelected ? "bg-primary/5 border-primary/20 border" : "hover:bg-muted/50"}`}
+                                            className={`w-full rounded p-3 text-left transition-colors ${isSelected ? "border border-(--primary-w20) bg-(--primary-w10)" : "hover:bg-(--secondary-w20)"}`}
                                         >
                                             <div className="mb-2 flex items-center justify-between">
                                                 {getStatusBadge(execution.status)}
-                                                <span className="text-muted-foreground text-xs">{execution.durationMs ? formatDuration(execution.durationMs) : "-"}</span>
+                                                <span className="text-xs text-(--secondary-text-wMain)">{execution.durationMs ? formatDuration(execution.durationMs) : "-"}</span>
                                             </div>
-                                            <span className="text-muted-foreground block text-xs">{execution.startedAt ? formatEpochTimestamp(execution.startedAt) : "Pending"}</span>
+                                            <span className="block text-xs text-(--secondary-text-wMain)">{execution.startedAt ? formatEpochTimestamp(execution.startedAt) : "Pending"}</span>
                                         </button>
                                     );
                                 })}
@@ -344,26 +349,26 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                 </div>
 
                                 {/* Execution Metadata */}
-                                <div className="bg-muted/30 grid grid-cols-2 gap-4 rounded p-4">
+                                <div className="grid grid-cols-2 gap-4 rounded bg-(--secondary-w10) p-4">
                                     <div>
-                                        <Label className="text-muted-foreground text-xs">Started</Label>
+                                        <Label className="text-xs text-(--secondary-text-wMain)">Started</Label>
                                         <div className="mt-1 text-sm">{selectedExecution.startedAt ? formatEpochTimestamp(selectedExecution.startedAt) : "Pending"}</div>
                                     </div>
                                     {selectedExecution.completedAt && (
                                         <div>
-                                            <Label className="text-muted-foreground text-xs">Completed</Label>
+                                            <Label className="text-xs text-(--secondary-text-wMain)">Completed</Label>
                                             <div className="mt-1 text-sm">{formatEpochTimestamp(selectedExecution.completedAt)}</div>
                                         </div>
                                     )}
                                     {selectedExecution.durationMs && (
                                         <div>
-                                            <Label className="text-muted-foreground text-xs">Duration</Label>
+                                            <Label className="text-xs text-(--secondary-text-wMain)">Duration</Label>
                                             <div className="mt-1 text-sm">{formatDuration(selectedExecution.durationMs)}</div>
                                         </div>
                                     )}
                                     {selectedExecution.retryCount > 0 && (
                                         <div>
-                                            <Label className="text-muted-foreground text-xs">Retries</Label>
+                                            <Label className="text-xs text-(--secondary-text-wMain)">Retries</Label>
                                             <div className="mt-1 text-sm">{selectedExecution.retryCount}</div>
                                         </div>
                                     )}
@@ -381,10 +386,10 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                 <div className="space-y-2">
                                     <Label className="text-(--color-secondaryText-wMain)">Response (Summary)</Label>
                                     {renderResponse(selectedExecution)}
-                                    <p className="text-muted-foreground text-xs">
+                                    <p className="text-xs text-(--secondary-text-wMain)">
                                         This is a truncated summary.{" "}
                                         <button
-                                            className="hover:text-foreground underline"
+                                            className="underline hover:text-(--primary-text-wMain)"
                                             onClick={async () => {
                                                 await handleSwitchSession(`scheduled_${selectedExecution.id}`);
                                                 navigate("/chat");
@@ -409,19 +414,19 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                     <h3 className="text-sm font-semibold">Task Configuration</h3>
 
                                     <div className="space-y-2">
-                                        <Label className="text-muted-foreground text-xs">Agent</Label>
+                                        <Label className="text-xs text-(--secondary-text-wMain)">Agent</Label>
                                         <div className="text-sm">{task.targetAgentName}</div>
                                     </div>
 
                                     <div className="space-y-2">
-                                        <Label className="text-muted-foreground text-xs">Schedule</Label>
+                                        <Label className="text-xs text-(--secondary-text-wMain)">Schedule</Label>
                                         <div className="text-sm">{formatScheduleExpression(task)}</div>
                                     </div>
 
                                     {task.taskMessage && task.taskMessage.length > 0 && (
                                         <div className="space-y-2">
-                                            <Label className="text-muted-foreground text-xs">Message</Label>
-                                            <div className="bg-muted/30 rounded p-3 text-sm break-words whitespace-pre-wrap">{task.taskMessage.map((part: { text?: string }) => part.text).join("\n")}</div>
+                                            <Label className="text-xs text-(--secondary-text-wMain)">Message</Label>
+                                            <div className="rounded bg-(--secondary-w10) p-3 text-sm break-words whitespace-pre-wrap">{task.taskMessage.map((part: { text?: string }) => part.text).join("\n")}</div>
                                         </div>
                                     )}
                                 </div>
@@ -429,7 +434,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                         </div>
                     ) : (
                         <div className="flex h-full items-center justify-center">
-                            <p className="text-muted-foreground">Select an execution to view details</p>
+                            <p className="text-(--secondary-text-wMain)">Select an execution to view details</p>
                         </div>
                     )}
                 </div>
@@ -503,7 +508,7 @@ export const TaskExecutionHistoryPage: React.FC<TaskExecutionHistoryPageProps> =
                                     </div>
                                 ) : (
                                     <div className="flex h-full items-center justify-center">
-                                        <p className="text-muted-foreground text-sm">No content available</p>
+                                        <p className="text-sm text-(--secondary-text-wMain)">No content available</p>
                                     </div>
                                 )}
                             </div>

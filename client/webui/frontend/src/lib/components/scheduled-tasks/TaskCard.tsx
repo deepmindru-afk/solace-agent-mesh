@@ -127,15 +127,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, isSelected = false, on
                     </div>
                     {task.description && <div className="mb-3 line-clamp-2 text-sm leading-5">{task.description}</div>}
                     <div className="mt-auto space-y-1">
-                        <div className="text-muted-foreground flex items-center gap-1 text-xs">
+                        <div className="flex items-center gap-1 text-xs text-(--secondary-text-wMain)">
                             <Clock className="h-3 w-3" />
                             <span className="truncate">{formatSchedule(task)}</span>
                         </div>
-                        <div className="text-muted-foreground flex items-center gap-1 text-xs">
+                        <div className="flex items-center gap-1 text-xs text-(--secondary-text-wMain)">
                             <Calendar className="h-3 w-3" />
                             <span>Next: {formatNextRun(task.nextRunAt)}</span>
                         </div>
-                        <div className="text-muted-foreground text-xs">
+                        <div className="text-xs text-(--secondary-text-wMain)">
                             <span className="truncate">
                                 {task.targetType === "workflow" ? "Workflow" : "Agent"}: {task.targetAgentName}
                             </span>
