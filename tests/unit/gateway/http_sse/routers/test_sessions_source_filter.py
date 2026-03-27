@@ -89,6 +89,9 @@ class TestGetAllSessionsSourceFilter:
             get_all_sessions,
         )
 
+        mock_config_resolver = MagicMock()
+        mock_config_resolver.validate_operation_config.return_value = {"valid": True}
+
         result = await get_all_sessions(
             project_id=None,
             source="scheduler",
@@ -97,6 +100,7 @@ class TestGetAllSessionsSourceFilter:
             db=mock_db,
             user=mock_user,
             session_service=mock_session_service,
+            config_resolver=mock_config_resolver,
         )
 
         assert result is not None

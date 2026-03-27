@@ -14,7 +14,7 @@ from ....common.utils.embeds import (
 )
 from ....common.utils.embeds.types import ResolutionMode
 from ....common.utils.templates import resolve_template_blocks_in_string
-from ..dependencies import get_session_business_service, get_db, get_title_generation_service, get_shared_artifact_service, get_sac_component
+from ..dependencies import get_session_business_service, get_db, get_title_generation_service, get_shared_artifact_service, get_sac_component, get_config_resolver, get_user_config
 from ..services.session_service import SessionService
 from solace_agent_mesh.shared.api.auth_utils import get_current_user
 from solace_agent_mesh.shared.api.pagination import DataResponse, PaginatedResponse, PaginationParams
@@ -48,6 +48,8 @@ async def get_all_sessions(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
     session_service: SessionService = Depends(get_session_business_service),
+    user_config: dict = Depends(get_user_config),
+    config_resolver=Depends(get_config_resolver),
 ):
     _VALID_SOURCES = {"chat", "scheduler"}
     if source is not None and source not in _VALID_SOURCES:
@@ -55,6 +57,19 @@ async def get_all_sessions(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid source filter: {source}. Must be one of: {', '.join(sorted(_VALID_SOURCES))}",
         )
+
+    # Require scheduling permission to list scheduler sessions
+    if source == "scheduler":
+        operation_spec = {"operation_type": "scheduling"}
+        validation_result = config_resolver.validate_operation_config(
+            user_config, operation_spec, {"source": "sessions_endpoint"}
+        )
+        if not validation_result.get("valid", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to view scheduler sessions",
+            )
+
     user_id = user.get("id")
     log_msg = f"User '{user_id}' is listing sessions with pagination (page={page_number}, size={page_size})"
     if project_id:

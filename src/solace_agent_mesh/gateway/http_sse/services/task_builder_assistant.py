@@ -275,8 +275,18 @@ REMEMBER:
             {"role": "system", "content": self.system_prompt}
         ]
         
-        # Add conversation history
-        messages.extend(conversation_history)
+        # Add conversation history — validate roles and enforce length limits
+        # to prevent injection of fake assistant turns or oversized messages.
+        _ALLOWED_ROLES = {"user", "assistant"}
+        _MAX_MESSAGE_LENGTH = 5000
+        for msg in conversation_history:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role not in _ALLOWED_ROLES:
+                continue
+            if isinstance(content, str):
+                content = content[:_MAX_MESSAGE_LENGTH]
+            messages.append({"role": role, "content": content})
         
         # Add current message with task context and available agents.
         # Sanitize current_task to only include expected fields and truncate
@@ -302,7 +312,15 @@ REMEMBER:
         )
 
         if available_agents:
-            task_context += f"\n\nAvailable Agents (ONLY use these):\n{json.dumps(available_agents, indent=2)}"
+            # Sanitize agent names: allow only alphanumeric, hyphens, underscores, dots
+            _AGENT_NAME_PATTERN = re.compile(r"^[\w\-\.]+$")
+            _MAX_AGENT_NAME_LENGTH = 128
+            sanitized_agents = [
+                name[:_MAX_AGENT_NAME_LENGTH]
+                for name in available_agents
+                if isinstance(name, str) and _AGENT_NAME_PATTERN.match(name[:_MAX_AGENT_NAME_LENGTH])
+            ]
+            task_context += f"\n\nAvailable Agents (ONLY use these):\n{json.dumps(sanitized_agents, indent=2)}"
 
         task_context += "\n--- END TASK DATA ---"
 

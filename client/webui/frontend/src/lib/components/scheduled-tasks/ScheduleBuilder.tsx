@@ -94,7 +94,17 @@ function cronToSchedule(cron: string): ScheduleConfig | null {
     const time = `${hours12.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 
     // Detect frequency
-    if (hour.includes("/")) {
+    if (minute.includes("/")) {
+        // Minute-interval pattern (e.g. */15 * * * *) — not representable in the builder
+        return {
+            frequency: "custom",
+            time,
+            ampm,
+            weekDays: [],
+            monthDay: 1,
+            hourInterval: 1,
+        };
+    } else if (hour.includes("/")) {
         // Hourly pattern
         const interval = parseInt(hour.split("/")[1]);
         return {
